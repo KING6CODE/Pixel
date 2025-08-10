@@ -1,37 +1,16 @@
-.app {
-  min-height: 100vh;
-  background-color: #f0f0f5;
-  color: #222;
-  position: relative;
-  overflow-x: hidden;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-.dark {
-  background-color: #121212;
-  color: #eee;
-}
-
-.particlesCanvas {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.header {
+.container {
+  max-width: 720px;
+  margin: 2rem auto;
+  font-family: Arial, sans-serif;
+  color: #333;
   text-align: center;
-  padding: 1rem;
-  position: relative;
-  z-index: 2;
 }
 
-h1 {
+.title {
   margin: 0 0 0.5rem 0;
 }
 
-.progressBarContainer {
-  position: relative;
+.progressContainer {
   height: 25px;
   width: 80%;
   max-width: 600px;
@@ -51,36 +30,6 @@ h1 {
   transition: width 0.5s ease;
 }
 
-.container {
-  display: flex;
-  justify-content: center;
-  gap: 2rem;
-  padding: 1rem;
-  position: relative;
-  z-index: 2;
-}
-
-.palette {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 0.5rem;
-  font-weight: 600;
-  font-size: 1rem;
-  color: inherit;
-  user-select: none;
-  min-width: 130px;
-}
-
-.palette input[type='color'] {
-  width: 100%;
-  height: 40px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  background: transparent;
-}
-
 .grid {
   display: grid;
   grid-template-columns: repeat(20, 30px);
@@ -88,7 +37,7 @@ h1 {
   gap: 3px;
   max-width: 660px;
   max-height: 660px;
-  overflow: auto;
+  margin: 0 auto;
   border-radius: 10px;
   box-shadow: 0 0 12px rgba(0,0,0,0.1);
   background: white;
@@ -102,13 +51,33 @@ h1 {
   align-items: center;
   font-size: 0.65rem;
   font-weight: 600;
-  transition: background-color 0.3s ease;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
   border-radius: 4px;
+  border: 2px solid transparent;
 }
 
-.pixel:focus {
-  outline: 3px solid #3367d6;
-  outline-offset: -2px;
+.pixel[data-price='1'] {
+  border-color: gray;
+}
+
+.pixel[data-price='2'] {
+  border-color: green;
+}
+
+.pixel[data-price='4'] {
+  border-color: blue;
+}
+
+.pixel[data-price='8'] {
+  border-color: purple;
+}
+
+.pixel[data-price='16'] {
+  border-color: gold;
+}
+
+.pixel:hover {
+  box-shadow: 0 0 8px 2px rgba(66, 133, 244, 0.7);
 }
 
 .glowPop {
@@ -122,49 +91,6 @@ h1 {
   100% {
     box-shadow: none;
   }
-}
-
-.sidePanel {
-  max-width: 300px;
-  padding: 1rem;
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 0 15px rgba(0,0,0,0.2);
-  overflow-y: auto;
-  height: 660px;
-  font-size: 0.9rem;
-  color: #333;
-}
-
-.dark .sidePanel {
-  background: #222;
-  color: #eee;
-  box-shadow: 0 0 15px rgba(100,100,255,0.7);
-}
-
-.sidePanel h2 {
-  margin-top: 0;
-  font-weight: 700;
-}
-
-.sidePanel ul {
-  padding-left: 1.2rem;
-}
-
-.closeBtn {
-  background: transparent;
-  border: none;
-  font-size: 1.3rem;
-  float: right;
-  cursor: pointer;
-  color: #888;
-  margin-top: -8px;
-  margin-right: -8px;
-}
-
-.closeBtn:hover {
-  color: #3367d6;
-  font-weight: 900;
 }
 
 .darkToggle {
@@ -187,4 +113,3 @@ h1 {
 .darkToggle:hover {
   background-color: #4285f4;
 }
-
