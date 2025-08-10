@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import BackgroundParticles from "./BackgroundParticles.js";
-import "./styles.css";
+import "./styles.module.css";
 
 const GRID_SIZE = 16;
 const TOTAL_PIXELS = GRID_SIZE * GRID_SIZE;
