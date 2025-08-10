@@ -2,7 +2,6 @@ import React, { useEffect, useRef } from "react";
 
 export default function BackgroundParticles() {
   const canvasRef = useRef(null);
-  const particles = useRef([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -36,14 +35,14 @@ export default function BackgroundParticles() {
       if (this.y < 0 || this.y > height) this.speedY *= -1;
     };
 
-    particles.current = [];
+    const particles = [];
     for (let i = 0; i < 120; i++) {
-      particles.current.push(new Particle());
+      particles.push(new Particle());
     }
 
     function animate() {
       ctx.clearRect(0, 0, width, height);
-      particles.current.forEach((p) => {
+      particles.forEach((p) => {
         p.update();
         p.draw();
       });
