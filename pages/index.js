@@ -2,49 +2,46 @@ import { useState } from 'react';
 
 const GRID_SIZE = 10;
 
-// Prix associés aux couleurs (tu peux personnaliser)
+// Palier des prix pour les couleurs des contours
 const PRICE_TIERS = [
-  { price: 1, border: '#aaa', name: '1€', glow: false },
-  { price: 2, border: '#4caf50', name: '2€', glow: false }, // vert
-  { price: 4, border: '#3367d6', name: '4€', glow: false }, // bleu
-  { price: 8, border: '#7e57c2', name: '8€', glow: false }, // violet
-  { price: 16, border: '#ffd700', name: '16€+', glow: true }, // doré glow
+  { minPrice: 1, border: '#aaa', name: '1€', glow: false },
+  { minPrice: 2, border: '#4caf50', name: '2€', glow: false }, // vert
+  { minPrice: 4, border: '#3367d6', name: '4€', glow: false }, // bleu
+  { minPrice: 8, border: '#7e57c2', name: '8€', glow: false }, // violet
+  { minPrice: 16, border: '#ffd700', name: '16€+', glow: true }, // doré glow
 ];
 
-// Fonction pour associer prix selon la couleur choisie
-function getPriceByColor(color) {
-  // Simplification : on regarde la teinte H (en degrés) et on définit un palier
-  // on convertit la couleur en HSL et on choisit un palier
-
-  const hsl = hexToHSL(color);
-  if (!hsl) return 1;
-  const h = hsl.h * 360;
-
-  if (h < 30 || h > 330) return 16; // rouge / doré
-  if (h < 60) return 8; // orange/violet
-  if (h < 150) return 4; // vert/bleu
-  if (h < 270) return 2; // bleu clair/vert clair
-  return 1;
+// Trouver le palier correspondant au prix (on prend le max minPrice <= price)
+function getTierByPrice(price) {
+  let tier = PRICE_TIERS[0];
+  for (let i = 0; i < PRICE_TIERS.length; i++) {
+    if (price >= PRICE_TIERS[i].minPrice) tier = PRICE_TIERS[i];
+  }
+  return tier;
 }
 
 export default function PixelPainter() {
-  // Pixels : array of {color, price}
+  // Chaque pixel a sa couleur et son prix actuel
   const [pixels, setPixels] = useState(
     Array(GRID_SIZE * GRID_SIZE).fill({ color: '#ffffff', price: 1 })
   );
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [color, setColor] = useState('#4285f4');
 
-  function applyColor() {
+  // Acheter / améliorer le pixel : prix double à chaque achat
+  function buyPixel() {
     if (selectedIndex === null) return;
-    const price = getPriceByColor(color);
+
+    const currentPixel = pixels[selectedIndex];
+    const newPrice = currentPixel.price * 2;
 
     const newPixels = [...pixels];
-    newPixels[selectedIndex] = { color, price };
+    newPixels[selectedIndex] = { color, price: newPrice };
     setPixels(newPixels);
     setSelectedIndex(null);
   }
 
+  // Réinitialiser tous les pixels
   function resetAll() {
     setPixels(Array(GRID_SIZE * GRID_SIZE).fill({ color: '#ffffff', price: 1 }));
     setSelectedIndex(null);
@@ -78,9 +75,7 @@ export default function PixelPainter() {
         }}
       >
         {pixels.map(({ color: pxColor, price }, i) => {
-          // Trouver style contour selon prix
-          const tier =
-            PRICE_TIERS.find((t) => t.price === price) || PRICE_TIERS[0];
+          const tier = getTierByPrice(price);
 
           return (
             <div
@@ -99,7 +94,7 @@ export default function PixelPainter() {
                 position: 'relative',
                 transition: 'all 0.3s ease',
               }}
-              title={`Pixel #${i + 1}\nPrix : ${price}€\nClique pour changer la couleur`}
+              title={`Pixel #${i + 1}\nPrix actuel : ${price}€\nClique pour acheter ou changer la couleur (prix double)`}
               onMouseEnter={(e) => {
                 e.currentTarget.style.transform = 'scale(1.1)';
                 e.currentTarget.style.boxShadow = `0 0 10px 4px ${tier.border}`;
@@ -111,7 +106,6 @@ export default function PixelPainter() {
                   : 'inset 0 0 5px rgba(0,0,0,0.1)';
               }}
             >
-              {/* Afficher prix en bas à droite */}
               <div
                 style={{
                   position: 'absolute',
@@ -144,9 +138,9 @@ export default function PixelPainter() {
           userSelect: 'none',
         }}
       >
-        {PRICE_TIERS.map(({ price, border, name, glow }) => (
+        {PRICE_TIERS.map(({ minPrice, border, name, glow }) => (
           <div
-            key={price}
+            key={minPrice}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -169,7 +163,7 @@ export default function PixelPainter() {
         ))}
       </div>
 
-      {/* Panneau sélection couleur */}
+      {/* Panneau sélection couleur + achat */}
       {selectedIndex !== null && (
         <div
           style={{
@@ -184,7 +178,7 @@ export default function PixelPainter() {
           }}
         >
           <h2 style={{ color: '#3367d6' }}>
-            Modifier couleur du pixel #{selectedIndex + 1}
+            Acheter/améliorer pixel #{selectedIndex + 1}
           </h2>
 
           <input
@@ -203,7 +197,7 @@ export default function PixelPainter() {
           />
 
           <button
-            onClick={applyColor}
+            onClick={buyPixel}
             style={{
               padding: '14px 30px',
               backgroundColor: '#3367d6',
@@ -219,7 +213,7 @@ export default function PixelPainter() {
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#2a4fb8')}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#3367d6')}
           >
-            Valider la couleur (prix calculé)
+            Acheter / améliorer (prix double)
           </button>
 
           <button
@@ -248,66 +242,22 @@ export default function PixelPainter() {
           backgroundColor: '#f44336',
           color: '#fff',
           border: 'none',
-          borderRadius: 12,
+          borderRadius: 10,
           cursor: 'pointer',
           fontWeight: 'bold',
-          boxShadow: '0 5px 15px rgba(244,67,54,0.6)',
+          fontSize: 16,
+          boxShadow: '0 6px 15px rgba(244,67,54,0.7)',
           transition: 'background-color 0.3s',
         }}
         onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#d32f2f')}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f44336')}
       >
-        Réinitialiser tout
+        Réinitialiser tous les pixels
       </button>
     </div>
   );
 }
 
-// Convertisseurs hex <-> hsl
-function hexToRgb(hex) {
-  let c = hex.substring(1);
-  if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
-  const bigint = parseInt(c, 16);
-  if (isNaN(bigint)) return null;
-  return {
-    r: (bigint >> 16) & 255,
-    g: (bigint >> 8) & 255,
-    b: bigint & 255,
-  };
-}
-function hexToHSL(hex) {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return null;
-  let r = rgb.r / 255,
-    g = rgb.g / 255,
-    b = rgb.b / 255;
-  let max = Math.max(r, g, b),
-    min = Math.min(r, g, b);
-  let h,
-    s,
-    l = (max + min) / 2;
-
-  if (max === min) h = s = 0;
-  else {
-    let d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case r:
-        h = (g - b) / d + (g < b ? 6 : 0);
-        break;
-      case g:
-        h = (b - r) / d + 2;
-        break;
-      case b:
-        h = (r - g) / d + 4;
-        break;
-      default:
-        h = 0;
-    }
-    h /= 6;
-  }
-  return { h, s, l };
-}
 
 
 
