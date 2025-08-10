@@ -1,449 +1,232 @@
-import React, { useState, useEffect, useRef } from 'react';
-
-const size = 12;
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function ParticlesBackground({ width, height }) {
-  const canvasRef = useRef(null);
-  const particles = useRef([]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-
-    // Init particles
-    const count = 50;
-    particles.current = [];
-    for (let i = 0; i < count; i++) {
-      particles.current.push({
-        x: Math.random() * width,
-        y: Math.random() * height,
-        size: 2 + Math.random() * 2,
-        speedX: (Math.random() - 0.5) * 0.3,
-        speedY: (Math.random() - 0.5) * 0.3,
-      });
-    }
-
-    let animationFrameId;
-    let mouseX = width / 2;
-    let mouseY = height / 2;
-
-    function draw() {
-      ctx.clearRect(0, 0, width, height);
-      particles.current.forEach((p) => {
-        // Move particle
-        p.x += p.speedX;
-        p.y += p.speedY;
-
-        // Bounce off edges
-        if (p.x < 0 || p.x > width) p.speedX = -p.speedX;
-        if (p.y < 0 || p.y > height) p.speedY = -p.speedY;
-
-        // Draw particle
-        ctx.beginPath();
-        const dist = Math.hypot(p.x - mouseX, p.y - mouseY);
-        const alpha = clamp(1 - dist / 200, 0, 0.7);
-        ctx.fillStyle = `rgba(51,103,214,${alpha})`;
-        ctx.shadowColor = `rgba(51,103,214,${alpha})`;
-        ctx.shadowBlur = 4;
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      animationFrameId = requestAnimationFrame(draw);
-    }
-
-    function onMouseMove(e) {
-      const rect = canvas.getBoundingClientRect();
-      mouseX = e.clientX - rect.left;
-      mouseY = e.clientY - rect.top;
-    }
-
-    canvas.addEventListener('mousemove', onMouseMove);
-    draw();
-
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-      canvas.removeEventListener('mousemove', onMouseMove);
-    };
-  }, [width, height]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        zIndex: -1,
-        pointerEvents: 'none',
-        width: '100vw',
-        height: '100vh',
-      }}
-      aria-hidden="true"
-    />
-  );
-}
+// pages/index.js
+import { useEffect, useState, useRef } from 'react';
 
 export default function PixelGame() {
-  const [pixels, setPixels] = useState(() =>
-    Array(size * size).fill(0).map(() => ({
-      price: 1,
-      owner: null,
-      color: '#eeeeee',
-    }))
-  );
-  const [selectedColor, setSelectedColor] = useState('#3367d6');
-  const [myPixels, setMyPixels] = useState([]);
-  const [ranking, setRanking] = useState([]);
-  const [questsCompleted, setQuestsCompleted] = useState({ pixelOfTheDay: false });
-  const [totalCollected, setTotalCollected] = useState(0);
-  const [pixelOfTheDay, setPixelOfTheDay] = useState(Math.floor(Math.random() * size * size));
-  const [glowingIndex, setGlowingIndex] = useState(null);
+  // State du zoom (1 = 100%)
+  const [zoom, setZoom] = useState(1);
+
+  // Mode sombre
   const [darkMode, setDarkMode] = useState(false);
 
-  // Zoom state
-  const [scale, setScale] = useState(1);
-  const [translate, setTranslate] = useState({ x: 0, y: 0 });
-  const wrapperRef = useRef(null);
+  // Ref de la page pour appliquer zoom CSS
+  const pageRef = useRef(null);
 
-  const minScale = 0.5;
-  const maxScale = 3;
+  // State pixels (chaque pixel a sa couleur et son prix)
+  // Exemple: 10x10 grille = 100 pixels
+  const GRID_SIZE = 10;
+  const BASE_PRICE = 1;
 
-  // User name (simple prompt)
-  const [userName, setUserName] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('username') || '';
+  // pixels: tableau d'objets { price, color }
+  const [pixels, setPixels] = useState(() => {
+    const arr = [];
+    for (let i = 0; i < GRID_SIZE * GRID_SIZE; i++) {
+      arr.push({ price: BASE_PRICE, color: '#eee' });
     }
-    return '';
+    return arr;
   });
 
+  // Zoom via molette
   useEffect(() => {
-    if (userName) localStorage.setItem('username', userName);
-  }, [userName]);
-
-  // Buy pixel handler
-  function buyPixel(i) {
-    if (!userName) {
-      const name = prompt('Entrez votre pseudo pour acheter un pixel :');
-      if (!name) return alert('Pseudo requis');
-      setUserName(name);
-      return;
+    function onWheel(e) {
+      e.preventDefault();
+      const delta = -e.deltaY * 0.0015;
+      setZoom((z) => {
+        let nz = z + delta;
+        if (nz < 0.5) nz = 0.5;  // limite dézoom
+        if (nz > 3) nz = 3;      // limite zoom max
+        return nz;
+      });
     }
+    window.addEventListener('wheel', onWheel, { passive: false });
+    return () => window.removeEventListener('wheel', onWheel);
+  }, []);
 
+  // Applique le zoom sur le ref de la page
+  useEffect(() => {
+    if (pageRef.current) {
+      pageRef.current.style.transform = `scale(${zoom})`;
+      pageRef.current.style.transformOrigin = 'top left';
+      // Ajuster la taille pour éviter scroll bizarre
+      pageRef.current.style.width = `${100 / zoom}%`;
+      pageRef.current.style.height = `${100 / zoom}%`;
+    }
+  }, [zoom]);
+
+  // Achète un pixel et augmente son prix (double)
+  function buyPixel(index) {
     setPixels((oldPixels) => {
-      const p = oldPixels[i];
-      const basePrice = p.price;
-      const discount = i === pixelOfTheDay ? 0.8 : 1;
-      const finalPrice = basePrice * discount;
+      const pixel = oldPixels[index];
+      const newPrice = pixel.price * 2;
+      // Couleurs contour selon prix
+      const borderColor = getBorderColor(newPrice);
 
-      // Just for demo, no actual payment
-      // Update pixel: price double, color selected, owner userName
-      const newPrice = basePrice * 2;
       const newPixels = [...oldPixels];
-      newPixels[i] = {
+      newPixels[index] = {
         price: newPrice,
-        owner: userName,
-        color: selectedColor,
+        color: borderColor === '#eee' ? '#ccc' : borderColor, // fond couleur douce, contour coloré
       };
-
-      // Update myPixels
-      setMyPixels((oldMyPixels) => {
-        const exists = oldMyPixels.find((px) => px.index === i);
-        if (exists) {
-          return oldMyPixels.map((px) =>
-            px.index === i ? { ...px, price: newPrice, color: selectedColor } : px
-          );
-        } else {
-          return [...oldMyPixels, { index: i, price: newPrice, color: selectedColor }];
-        }
-      });
-
-      // Update ranking
-      setRanking((oldRanking) => {
-        const found = oldRanking.find(([name]) => name === userName);
-        if (found) {
-          return oldRanking
-            .map(([name, amt]) => (name === userName ? [name, amt + finalPrice] : [name, amt]))
-            .sort((a, b) => b[1] - a[1]);
-        } else {
-          return [...oldRanking, [userName, finalPrice]].sort((a, b) => b[1] - a[1]);
-        }
-      });
-
-      // Update total collected
-      setTotalCollected((old) => old + finalPrice);
-
-      // Glow effect
-      setGlowingIndex(i);
-      setTimeout(() => setGlowingIndex(null), 700);
-
-      // Quests
-      if (i === pixelOfTheDay) {
-        setQuestsCompleted((old) => ({ ...old, pixelOfTheDay: true }));
-      }
-
       return newPixels;
     });
   }
 
-  // Zoom handler centered on mouse
-  function handleWheel(e) {
-    e.preventDefault();
-
-    if (!wrapperRef.current) return;
-
-    const rect = wrapperRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    let newScale = scale - e.deltaY * 0.001;
-    newScale = clamp(newScale, minScale, maxScale);
-
-    // Calculate translate to keep zoom centered on mouse
-    const scaleRatio = newScale / scale;
-    const newTranslateX = translate.x - (mouseX - translate.x) * (scaleRatio - 1);
-    const newTranslateY = translate.y - (mouseY - translate.y) * (scaleRatio - 1);
-
-    setScale(newScale);
-    setTranslate({ x: newTranslateX, y: newTranslateY });
-  }
-
-  // Toggle dark mode
-  function toggleDarkMode() {
-    setDarkMode((old) => !old);
+  // Couleur du contour selon prix (palette, plus cher = plus chaud)
+  function getBorderColor(price) {
+    if (price < 2) return '#999';     // gris
+    if (price < 4) return '#28a745';  // vert
+    if (price < 8) return '#007bff';  // bleu
+    if (price < 16) return '#6f42c1'; // violet
+    if (price < 32) return '#ffc107'; // doré
+    return '#fd7e14';                 // orange foncé au-delà
   }
 
   return (
     <>
-      <ParticlesBackground width={window.innerWidth} height={window.innerHeight} />
-
-      <div
-        style={{
-          height: '100vh',
-          overflow: 'hidden',
-          background: darkMode ? '#121212' : '#f5f5f5',
-          color: darkMode ? '#ddd' : '#222',
-          transition: 'background 0.3s, color 0.3s',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          padding: '1rem',
-          userSelect: 'none',
-        }}
-      >
-        <header style={{ marginBottom: 20, width: '100%', maxWidth: 800, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1>PixelGame 🎮</h1>
-          <button
-            onClick={toggleDarkMode}
-            aria-label="Basculer mode sombre"
-            style={{
-              cursor: 'pointer',
-              padding: '0.3rem 0.7rem',
-              fontSize: 16,
-              borderRadius: 6,
-              border: '1px solid',
-              backgroundColor: darkMode ? '#333' : '#fff',
-              color: darkMode ? '#ddd' : '#222',
-            }}
-          >
-            {darkMode ? '☀️ Mode clair' : '🌙 Mode sombre'}
-          </button>
-        </header>
-
-        <div
-          ref={wrapperRef}
-          onWheel={handleWheel}
-          style={{
-            border: darkMode ? '2px solid #555' : '2px solid #ccc',
-            width: size * 22,
-            height: size * 22,
-            overflow: 'hidden',
-            transformOrigin: '0 0',
-            transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
-            background: darkMode ? '#222' : '#fff',
-            userSelect: 'none',
-          }}
-          aria-label="Zone de jeu des pixels"
-        >
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${size}, 20px)`,
-              gridTemplateRows: `repeat(${size}, 20px)`,
-              gap: 2,
-              cursor: 'pointer',
-              userSelect: 'none',
-            }}
-          >
-            {pixels.map((p, i) => {
-              const isPixelOfDay = i === pixelOfTheDay;
-              const glowClass = glowingIndex === i ? 'glowPop' : '';
-              const borderColor = (() => {
-                if (isPixelOfDay) return '#ff6f61';
-                if (p.price >= 64) return 'gold';
-                if (p.price >= 32) return 'violet';
-                if (p.price >= 16) return 'blue';
-                if (p.price >= 8) return 'green';
-                if (p.price >= 4) return 'gray';
-                return darkMode ? '#555' : '#ddd';
-              })();
-
-              return (
-                <div
-                  key={i}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => buyPixel(i)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') buyPixel(i);
-                  }}
-                  aria-label={`Pixel ${i + 1}, prix ${p.price} euros, ${
-                    p.owner ? 'possédé par ' + p.owner : 'non possédé'
-                  }`}
-                  style={{
-                    width: 20,
-                    height: 20,
-                    border: `2px solid ${borderColor}`,
-                    backgroundColor: p.color,
-                    boxShadow: glowingIndex === i ? '0 0 10px 3px #3367d6' : 'none',
-                    transition: 'all 0.3s ease',
-                  }}
-                  className={glowClass}
-                />
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Color picker */}
-        <div style={{ marginTop: 15 }}>
-          <label htmlFor="colorPicker">Couleur choisie: </label>
-          <input
-            id="colorPicker"
-            type="color"
-            value={selectedColor}
-            onChange={(e) => setSelectedColor(e.target.value)}
-            aria-label="Sélecteur de couleur"
-          />
-        </div>
-
-        {/* Menus déroulants */}
-        <div
-          style={{
-            marginTop: 20,
-            width: '100%',
-            maxWidth: 800,
-            color: darkMode ? '#ddd' : '#222',
-          }}
-        >
-          <details>
-            <summary style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 18 }}>
-              Mes pixels ({myPixels.length})
-            </summary>
-            {myPixels.length === 0 && <p>Vous ne possédez aucun pixel.</p>}
-            <ul>
-              {myPixels.map((p) => (
-                <li key={p.index}>
-                  Pixel #{p.index + 1} - Couleur:{' '}
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      width: 15,
-                      height: 15,
-                      backgroundColor: p.color,
-                      border: '1px solid #000',
-                      verticalAlign: 'middle',
-                      marginRight: 5,
-                    }}
-                  />
-                  Prix actuel: {p.price} €
-                </li>
-              ))}
-            </ul>
-          </details>
-
-          <details style={{ marginTop: 15 }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 18 }}>
-              Classement des meilleurs acheteurs
-            </summary>
-            {ranking.length === 0 && <p>Aucun acheteur pour le moment.</p>}
-            <ol>
-              {ranking.map(([name, amount], i) => (
-                <li key={name}>
-                  {name} - Investi {amount.toFixed(2)} €
-                </li>
-              ))}
-            </ol>
-          </details>
-
-          <details style={{ marginTop: 15 }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: 18 }}>
-              Quêtes journalières
-            </summary>
-            <ul>
-              <li>
-                Pixel du jour:{' '}
-                <strong
-                  style={{
-                    color: questsCompleted.pixelOfTheDay ? 'limegreen' : 'orange',
-                  }}
-                >
-                  {questsCompleted.pixelOfTheDay ? 'Terminé' : 'À faire'}
-                </strong>
-              </li>
-              <li>
-                Bonus pour achat du pixel du jour : 20% de réduction sur le prix !
-              </li>
-            </ul>
-          </details>
-
-          <div style={{ marginTop: 20, fontStyle: 'italic' }}>
-            Total collecté par la communauté: <strong>{totalCollected.toFixed(2)} €</strong>
-          </div>
-        </div>
-      </div>
-
       <style jsx>{`
-        .glowPop {
-          animation: glowPopAnim 0.7s ease forwards;
+        :root {
+          --bg-light: #f9f9f9;
+          --bg-dark: #121212;
+          --text-light: #222;
+          --text-dark: #eee;
         }
-        @keyframes glowPopAnim {
-          0% {
-            box-shadow: 0 0 0 0 #3367d6;
-          }
-          50% {
-            box-shadow: 0 0 15px 6px #3367d6;
-          }
-          100% {
-            box-shadow: 0 0 0 0 #3367d6;
-          }
+        body {
+          margin: 0;
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          background-color: ${darkMode ? 'var(--bg-dark)' : 'var(--bg-light)'};
+          color: ${darkMode ? 'var(--text-dark)' : 'var(--text-light)'};
+          overflow: hidden; /* éviter scroll page */
         }
-        summary {
-          list-style: none;
+        .page {
+          padding: 10px;
+          width: 100vw;
+          height: 100vh;
+          box-sizing: border-box;
+          background: radial-gradient(circle at center, ${darkMode ? '#222' : '#fff'} 0%, ${darkMode ? '#121212' : '#eee'} 100%);
+          transition: background-color 0.3s ease;
+        }
+        .topbar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+        }
+        button {
+          cursor: pointer;
+          background-color: transparent;
+          border: 1.5px solid currentColor;
+          border-radius: 6px;
+          padding: 6px 12px;
+          font-weight: 600;
+          color: inherit;
+          transition: background-color 0.3s ease;
+        }
+        button:hover {
+          background-color: rgba(0,0,0,0.1);
+        }
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(${GRID_SIZE}, 30px);
+          grid-template-rows: repeat(${GRID_SIZE}, 30px);
+          gap: 3px;
+          justify-content: center;
           user-select: none;
-          outline: none;
+          margin-top: 10px;
         }
-        summary::-webkit-details-marker {
+        .pixel {
+          width: 30px;
+          height: 30px;
+          background-color: var(--pixel-bg, #eee);
+          border: 3px solid var(--pixel-border, #999);
+          box-sizing: border-box;
+          border-radius: 5px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          font-weight: 700;
+          color: #222;
+          transition: all 0.25s ease;
+          position: relative;
+          cursor: pointer;
+          filter: drop-shadow(0 0 2px rgba(0,0,0,0.1));
+        }
+        .pixel:hover {
+          filter: drop-shadow(0 0 6px rgba(50,150,250,0.8));
+          transform: scale(1.1);
+          z-index: 10;
+        }
+        .pixel span {
+          pointer-events: none;
+          user-select: none;
+        }
+        .dark .pixel {
+          color: #eee;
+          filter: drop-shadow(0 0 1px rgba(0,0,0,0.7));
+        }
+        .dropdown {
+          position: relative;
+          display: inline-block;
+        }
+        .dropdown-content {
           display: none;
+          position: absolute;
+          background-color: ${darkMode ? '#333' : '#fff'};
+          min-width: 160px;
+          box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+          padding: 12px 16px;
+          z-index: 1000;
+          border-radius: 8px;
+          color: ${darkMode ? '#eee' : '#222'};
         }
-        details[open] summary::before {
-          content: '▼ ';
-          color: #3367d6;
-        }
-        summary::before {
-          content: '▶ ';
-          color: #3367d6;
+        .dropdown:hover .dropdown-content {
+          display: block;
         }
       `}</style>
+
+      <div className={`page ${darkMode ? 'dark' : ''}`} ref={pageRef}>
+
+        <div className="topbar">
+          <button onClick={() => setDarkMode(!darkMode)}>
+            Mode {darkMode ? 'Clair' : 'Sombre'}
+          </button>
+
+          <div className="dropdown">
+            <button>Menu ▼</button>
+            <div className="dropdown-content">
+              <p><b>Quêtes & Missions</b></p>
+              <ul>
+                <li>Acheter un pixel bonus du jour</li>
+                <li>Atteindre 100€ collectés</li>
+                <li>Zoomer pour trouver des pixels cachés</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid">
+          {pixels.map((pixel, i) => {
+            const borderColor = getBorderColor(pixel.price);
+            return (
+              <div
+                key={i}
+                className="pixel"
+                onClick={() => buyPixel(i)}
+                style={{
+                  backgroundColor: pixel.color,
+                  borderColor,
+                  boxShadow: `0 0 8px ${borderColor}`,
+                }}
+                title={`Prix actuel : ${pixel.price}€\nClique pour acheter et doubler le prix`}
+              >
+                <span>{pixel.price}€</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </>
   );
 }
+
 
 
 
