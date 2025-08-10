@@ -1,9 +1,7 @@
-// pages/index.js
-import React, { useState, useEffect } from 'react';
-import Particles from 'react-tsparticles'; // lib particules légère
-import './styles.css';
+import React, { useState, useEffect, useRef } from 'react';
+import styles from '../styles.module.css'; // CSS module local
 
-const GRID_SIZE = 20; // 20x20 pixels
+const GRID_SIZE = 20;
 const BASE_PRICE = 1;
 
 const BORDER_COLORS = [
@@ -21,8 +19,71 @@ function getBorderColor(price) {
   return 'gray';
 }
 
+// Composant particules Canvas simple
+function ParticlesBackground() {
+  const canvasRef = useRef(null);
+  const animationRef = useRef(null);
+  const particles = useRef([]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let width = canvas.width = window.innerWidth;
+    let height = canvas.height = window.innerHeight;
+
+    function random(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    // Crée 50 particules
+    particles.current = Array.from({ length: 50 }).map(() => ({
+      x: random(0, width),
+      y: random(0, height),
+      vx: random(-0.3, 0.3),
+      vy: random(-0.3, 0.3),
+      radius: random(1, 3),
+      alpha: random(0.1, 0.3),
+    }));
+
+    function animate() {
+      ctx.clearRect(0, 0, width, height);
+      particles.current.forEach((p) => {
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < 0 || p.x > width) p.vx *= -1;
+        if (p.y < 0 || p.y > height) p.vy *= -1;
+
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(100, 100, 255, ${p.alpha})`;
+        ctx.shadowColor = `rgba(100, 100, 255, ${p.alpha * 2})`;
+        ctx.shadowBlur = 4;
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      animationRef.current = requestAnimationFrame(animate);
+    }
+
+    animate();
+
+    // Resize handler
+    function onResize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', onResize);
+
+    return () => {
+      cancelAnimationFrame(animationRef.current);
+      window.removeEventListener('resize', onResize);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className={styles.particlesCanvas} aria-hidden="true" />;
+}
+
 export default function Home() {
-  // pixels = [{price, color, history: [{price, date}]}]
   const [pixels, setPixels] = useState(
     Array(GRID_SIZE * GRID_SIZE).fill(null).map(() => ({
       price: BASE_PRICE,
@@ -31,13 +92,11 @@ export default function Home() {
       glowing: false,
     }))
   );
-
   const [selectedPixel, setSelectedPixel] = useState(null);
   const [selectedColor, setSelectedColor] = useState('#ff0000');
   const [darkMode, setDarkMode] = useState(false);
   const [totalCollected, setTotalCollected] = useState(0);
 
-  // Gestion de l'achat pixel
   const buyPixel = (index) => {
     setPixels((oldPixels) => {
       const newPixels = [...oldPixels];
@@ -45,7 +104,6 @@ export default function Home() {
       const oldPrice = pixel.price;
       const newPrice = oldPrice * 2;
 
-      // Mise à jour historique
       const newHistory = [...pixel.history, { price: newPrice, date: new Date() }];
 
       newPixels[index] = {
@@ -55,7 +113,6 @@ export default function Home() {
         glowing: true,
       };
 
-      // Ajouter glow pendant 600ms puis retirer
       setTimeout(() => {
         setPixels((pxs) => {
           const copy = [...pxs];
@@ -70,59 +127,46 @@ export default function Home() {
     });
   };
 
-  // Récupérer contour
   const getBorderStyle = (price) => {
     const color = getBorderColor(price);
-    const style = {
+    return {
       border: `3px solid ${color}`,
       boxShadow:
         price >= 16 ? `0 0 10px 3px ${color}` : 'none',
-      transition: 'border-color 0.3s, box-shadow 0.3s',
       borderRadius: 4,
+      transition: 'border-color 0.3s, box-shadow 0.3s',
     };
-    return style;
   };
 
-  // Format date
   const formatDate = (d) =>
     d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
 
   return (
-    <div className={darkMode ? 'app dark' : 'app'}>
-      {/* Toggle mode sombre */}
-      <button className="dark-toggle" onClick={() => setDarkMode(!darkMode)}>
+    <div className={`${styles.app} ${darkMode ? styles.dark : ''}`}>
+      <ParticlesBackground />
+      <button
+        className={styles.darkToggle}
+        onClick={() => setDarkMode(!darkMode)}
+        aria-label="Basculer le mode sombre"
+      >
         {darkMode ? '☀️ Mode clair' : '🌙 Mode sombre'}
       </button>
 
-      {/* Particules en fond */}
-      <Particles
-        className="particles-bg"
-        options={{
-          fpsLimit: 60,
-          interactivity: { events: { onHover: { enable: true, mode: 'repulse' } } },
-          particles: {
-            color: { value: darkMode ? '#aaa' : '#555' },
-            links: { enable: false },
-            move: { enable: true, speed: 1, direction: 'none', outMode: 'bounce' },
-            number: { value: 40 },
-            size: { value: 3, random: true },
-            opacity: { value: 0.2 },
-          },
-        }}
-      />
-
-      <header>
+      <header className={styles.header}>
         <h1>Vente de Pixels</h1>
-        <div className="progress-bar-container" aria-label="Progression totale des ventes">
-          <div className="progress-bar" style={{ width: `${Math.min(totalCollected / 1000 * 100, 100)}%` }} />
+        <div className={styles.progressBarContainer} aria-label="Progression totale des ventes">
+          <div
+            className={styles.progressBar}
+            style={{ width: `${Math.min((totalCollected / 1000) * 100, 100)}%` }}
+          />
           <span>Total collecté : {totalCollected} €</span>
         </div>
       </header>
 
-      <div className="container">
-        <div className="palette">
+      <div className={styles.container}>
+        <div className={styles.palette}>
           <label>
-            Choisir couleur:
+            Choisir couleur :
             <input
               type="color"
               value={selectedColor}
@@ -132,14 +176,14 @@ export default function Home() {
           </label>
         </div>
 
-        <div className="grid" role="grid" aria-label="Grille des pixels à acheter">
+        <div className={styles.grid} role="grid" aria-label="Grille des pixels à acheter">
           {pixels.map((pixel, i) => (
             <div
               key={i}
               role="gridcell"
               tabIndex={0}
               aria-label={`Pixel n°${i + 1}, prix actuel ${pixel.price} euros`}
-              className={`pixel ${pixel.glowing ? 'glow-pop' : ''}`}
+              className={`${styles.pixel} ${pixel.glowing ? styles.glowPop : ''}`}
               style={{
                 backgroundColor: pixel.color,
                 ...getBorderStyle(pixel.price),
@@ -160,11 +204,10 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Panneau latéral */}
         {selectedPixel !== null && (
-          <aside className="side-panel" aria-live="polite">
+          <aside className={styles.sidePanel} aria-live="polite">
             <button
-              className="close-btn"
+              className={styles.closeBtn}
               aria-label="Fermer le panneau d'historique"
               onClick={() => setSelectedPixel(null)}
             >
@@ -188,6 +231,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
