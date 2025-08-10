@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import BackgroundParticles from "./BackgroundParticles";
+import BackgroundParticles from "./BackgroundParticles.js";
 import "./styles.css";
 
 const GRID_SIZE = 16;
