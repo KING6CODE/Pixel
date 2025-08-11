@@ -1,100 +1,155 @@
 /* styles/Game.module.css */
 
-.container {
-  position: relative;
-  min-height: 100vh;
-  color: #e6eef8;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+html, body, #__next {
+  height: 100%;
+  margin: 0;
   background: #07102a;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  z-index: 10;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #e6eef8;
+  overflow: hidden; /* On évite scroll pour mieux centrer */
 }
 
-.header {
+.navbar {
   width: 100%;
-  max-width: 1100px;
+  padding: 12px 32px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 32px;
-}
-
-.header h1 {
-  font-weight: 700;
-  font-size: 2rem;
-  color: #7cc4ff;
-  text-shadow: 0 0 10px #7cc4ffbb;
+  background: linear-gradient(135deg, #14204c, #254b8f);
+  box-shadow: 0 4px 12px #000000bb;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
 }
 
 .homeBtn {
-  color: #07102a;
-  background: #7cc4ff;
-  padding: 8px 16px;
+  color: #e6eef8;
+  background: #3367d6;
+  padding: 10px 20px;
   font-weight: 700;
-  border-radius: 10px;
-  box-shadow: 0 8px 20px #7cc4ff88;
-  transition: all 0.3s ease;
+  border-radius: 12px;
+  box-shadow: 0 0 20px #3367d6aa;
   text-decoration: none;
+  transition: background-color 0.3s ease;
 }
 
 .homeBtn:hover {
-  background: #5a9fed;
-  box-shadow: 0 12px 28px #5a9fedcc;
+  background-color: #4285f4;
+  box-shadow: 0 0 32px #4285f4cc;
+}
+
+.progress {
+  color: #b1c8ff;
+  font-weight: 700;
+  font-size: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  width: 220px;
+  user-select: none;
+}
+
+.progressBar {
+  width: 100%;
+  height: 8px;
+  background: #254b8f88;
+  border-radius: 8px;
+  margin-top: 4px;
+  box-shadow: inset 0 0 8px #3367d688;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(90deg, #7cc4ff, #4285f4);
+  box-shadow: 0 0 10px #4285f4cc;
+  transition: width 0.4s ease;
+}
+
+.main {
+  height: 100vh;
+  padding-top: 72px; /* Pour laisser place à la navbar fixe */
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* Centrage vertical */
+  align-items: center;     /* Centrage horizontal */
+  gap: 16px;
+  text-align: center;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
+.header h1 {
+  font-size: 3.2rem;
+  font-weight: 900;
+  color: #7cc4ff;
+  text-shadow:
+    0 0 12px #7cc4ffbb,
+    0 0 25px #4285f4bb;
+  margin: 0;
+}
+
+.subtitle {
+  margin-top: 6px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #9cc7ffcc;
+  text-shadow: 0 0 4px #3367d6bb;
 }
 
 .page {
   display: flex;
+  gap: 36px;
   max-width: 1100px;
   width: 100%;
-  gap: 40px;
+  justify-content: center;
+  align-items: center;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(10, 40px);
-  grid-template-rows: repeat(10, 40px);
-  gap: 6px;
+  grid-template-columns: repeat(10, 44px);
+  grid-template-rows: repeat(10, 44px);
+  gap: 8px;
   background: #14204c;
-  padding: 12px;
-  border-radius: 20px;
-  box-shadow: 0 0 40px #3367d6aa inset;
+  padding: 16px;
+  border-radius: 24px;
+  box-shadow: 0 0 60px #3367d6aa inset;
+  user-select: none;
 }
 
 .pixel {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 8px;
   position: relative;
-  box-shadow: inset 0 0 6px #07102a;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: inset 0 0 8px #07102a;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
   display: flex;
   justify-content: center;
   align-items: center;
   color: #07102a;
   font-weight: 700;
-  font-size: 0.8rem;
-  user-select: none;
+  font-size: 0.9rem;
 }
 
 .pixel:hover {
-  transform: scale(1.15);
-  box-shadow: 0 0 12px #7cc4ffdd, inset 0 0 8px #3367d6dd;
+  transform: scale(1.18);
+  box-shadow: 0 0 20px #7cc4ffdd, inset 0 0 12px #3367d6dd;
   color: #e6eef8;
   font-weight: 800;
 }
 
 .price {
   pointer-events: none;
-  text-shadow: 0 0 4px #07102aaa;
+  text-shadow: 0 0 5px #07102aaa;
 }
 
 .selected {
-  box-shadow: 0 0 24px 3px #4285f4cc !important;
-  transform: scale(1.3);
+  box-shadow: 0 0 30px 4px #4285f4cc !important;
+  transform: scale(1.35);
   z-index: 2;
 }
 
@@ -120,69 +175,78 @@
 
 .sidebar {
   background: #0e1a3dcc;
-  border-radius: 18px;
-  padding: 24px;
-  width: 280px;
-  box-shadow: 0 0 40px #3367d6bb inset;
+  border-radius: 20px;
+  padding: 28px 28px 24px 28px;
+  width: 300px;
+  box-shadow: 0 0 60px #3367d6bb inset;
   color: #b1c8ff;
   font-weight: 600;
   user-select: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  text-align: center;
 }
 
 .sidebar h2 {
   color: #7cc4ff;
+  margin-bottom: 14px;
+  font-weight: 900;
+  font-size: 2rem;
+  text-shadow:
+    0 0 10px #7cc4ffaa,
+    0 0 20px #4285f4cc;
+}
+
+.colorPreview {
+  width: 100%;
+  height: 80px;
+  border-radius: 16px;
+  box-shadow: 0 0 40px 5px inset;
   margin-bottom: 12px;
-  font-weight: 800;
-  font-size: 1.8rem;
-  text-shadow: 0 0 8px #7cc4ffcc;
+  font-weight: 700;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #07102a;
+  text-shadow: 0 0 6px #fff;
 }
 
 .colorPicker label {
   display: block;
-  margin: 12px 0 4px;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #9cc7ff;
+  margin-bottom: 14px;
+  font-size: 1rem;
+  color: #a0b8ffcc;
+  font-weight: 600;
 }
 
-.colorPicker input[type='range'] {
+.colorPicker input[type="range"] {
   width: 100%;
+  margin-top: 6px;
+  accent-color: #4285f4;
   cursor: pointer;
-  margin-top: 4px;
 }
 
 .buyBtn {
-  margin-top: 24px;
   padding: 14px 0;
-  width: 100%;
-  font-weight: 900;
-  font-size: 1.1rem;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #4285f4, #7cc4ff);
-  color: #07102a;
+  background: #3367d6;
   border: none;
-  box-shadow: 0 12px 36px #3367d688;
+  border-radius: 16px;
+  font-weight: 900;
+  font-size: 1.2rem;
+  color: #e6eef8;
   cursor: pointer;
-  transition: all 0.3s ease;
+  box-shadow: 0 0 20px #3367d6aa;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  user-select: none;
 }
 
 .buyBtn:hover:not(:disabled) {
-  box-shadow: 0 16px 48px #4285f4cc;
-  transform: translateY(-3px);
+  background: #4285f4;
+  box-shadow: 0 0 32px #4285f4cc;
 }
 
 .buyBtn:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: default;
 }
-
-.footer {
-  margin-top: 48px;
-  color: #7cc4ffaa;
-  font-size: 0.9rem;
-  font-weight: 500;
-  text-align: center;
-}
-
-
-
