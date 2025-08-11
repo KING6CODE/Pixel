@@ -1,0 +1,33 @@
+/* styles/global.css */
+
+/* Reset et styles de base */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #121212;
+  color: white;
+  height: 100%;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Style global pour tous les h1 */
+h1 {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  font-weight: 900;
+  font-size: 3rem;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
+}
+
+/* Mode sombre toggle (correspondant aux classes dans styles.module.css) */
+body.dark {
+  background: #0e1726 !important;
+  color: #ccc !important;
+}
