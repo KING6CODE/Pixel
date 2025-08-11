@@ -1,7 +1,7 @@
-// components/ParticlesBackground.js
+// components/BackgroundParticles.js
 import { useEffect, useRef } from 'react';
 
-export default function ParticlesBackground({ color = '#60a5fa', density = 60 }) {
+export default function ParticlesBackground({ color = '#60a5fa', density = 70 }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -15,22 +15,22 @@ export default function ParticlesBackground({ color = '#60a5fa', density = 60 })
     const particles = Array.from({ length: density }).map(() => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      r: 0.6 + Math.random() * 1.8,
+      r: 0.6 + Math.random() * 1.6,
       vx: (Math.random() - 0.5) * 0.25,
       vy: (Math.random() - 0.5) * 0.25,
-      alpha: 0.05 + Math.random() * 0.15,
+      alpha: 0.04 + Math.random() * 0.12,
     }));
 
     function draw() {
       ctx.clearRect(0, 0, width, height);
-      // subtle gradient overlay
+      // subtle gradient overlay behind particles
       const g = ctx.createLinearGradient(0, 0, width, height);
-      g.addColorStop(0, 'rgba(6, 11, 34, 0.35)');
-      g.addColorStop(1, 'rgba(9, 17, 56, 0.35)');
+      g.addColorStop(0, 'rgba(6,11,34,0.25)');
+      g.addColorStop(1, 'rgba(9,17,56,0.25)');
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, width, height);
 
-      // particles
+      // draw particles
       ctx.fillStyle = color;
       particles.forEach((p) => {
         ctx.beginPath();
@@ -76,7 +76,10 @@ export default function ParticlesBackground({ color = '#60a5fa', density = 60 })
         inset: 0,
         zIndex: 0,
         pointerEvents: 'none',
+        width: '100vw',
+        height: '100vh',
       }}
     />
   );
 }
+
