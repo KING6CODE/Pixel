@@ -1,185 +1,230 @@
 // pages/game.js
-import React, { useState, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import ParticlesBackground from '../components/ParticlesBackground';
 import styles from '../styles/Game.module.css';
 
 const GRID_SIZE = 10;
-const TOTAL_PIXELS = GRID_SIZE * GRID_SIZE;
+const START_PRICE = 1;
 
-function createInitialPixels() {
-  // Tous à prix 1€, couleur initiale hsl(210, 70%, 80%) (bleu pastel)
-  const baseHue = 210;
-  const baseSat = 70;
-  const baseLight = 80;
-  return Array(TOTAL_PIXELS).fill().map(() => ({
-    price: 1,
-    color: `hsl(${baseHue}, ${baseSat}%, ${baseLight}%)`,
-    h: baseHue,
-    s: baseSat,
-    l: baseLight,
-    bought: false,
-  }));
+/* util: convert hex -> hsl (used si couleur stockée en hex) */
+function hexToHsl(hex) {
+  if (!hex) return [210, 80, 60];
+  const h = hex.replace('#', '');
+  if (h.length === 3) {
+    const r = parseInt(h[0] + h[0], 16);
+    const g = parseInt(h[1] + h[1], 16);
+    const b = parseInt(h[2] + h[2], 16);
+    return rgbToHsl(r, g, b);
+  }
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return rgbToHsl(r, g, b);
 }
 
-export default function PixelGame() {
-  const [pixels, setPixels] = useState(createInitialPixels);
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, s = 0, l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      case b: h = (r - g) / d + 4; break;
+    }
+    h = h * 60;
+  }
+  return [Math.round(h), Math.round(s * 100), Math.round(l * 100)];
+}
+
+function hslToCss(h, s, l) {
+  return `hsl(${h}, ${s}%, ${l}%)`;
+}
+
+function getBorderPriceClass(price) {
+  if (price < 2) return 'borderPrice1';
+  if (price < 4) return 'borderPrice2';
+  if (price < 8) return 'borderPrice4';
+  if (price < 16) return 'borderPrice8';
+  return 'borderPrice16';
+}
+
+export default function Game() {
+  const total = GRID_SIZE * GRID_SIZE;
+  const [pixels, setPixels] = useState(() =>
+    Array.from({ length: total }).map(() => ({ color: '#ffffff', price: START_PRICE }))
+  );
+
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [h, setH] = useState(210);
-  const [s, setS] = useState(70);
-  const [l, setL] = useState(80);
+  const [s, setS] = useState(80);
+  const [l, setL] = useState(60);
   const [isBuying, setIsBuying] = useState(false);
 
-  // Met à jour la couleur HSL du pixel sélectionné quand on change la couleur
-  useEffect(() => {
-    if (selectedIndex === null) return;
-    setPixels(prev =>
-      prev.map((p, i) =>
-        i === selectedIndex
-          ? {
-              ...p,
-              h,
-              s,
-              l,
-              color: `hsl(${h}, ${s}%, ${l}%)`,
-            }
-          : p
-      )
-    );
-  }, [h, s, l, selectedIndex]);
+  // derived preview color (live)
+  const previewColor = useMemo(() => hslToCss(h, s, l), [h, s, l]);
 
-  const handlePixelClick = (index) => {
+  // progression
+  const purchasedCount = useMemo(() => pixels.filter(p => p.price > START_PRICE).length, [pixels]);
+  const progressPercent = Math.round((purchasedCount / total) * 100);
+
+  // when selecting pixel, init sliders from its color (support hsl(...) or hex)
+  function openPixel(index) {
     setSelectedIndex(index);
-    const p = pixels[index];
-    setH(p.h);
-    setS(p.s);
-    setL(p.l);
-  };
+    const cur = pixels[index]?.color ?? '#ffffff';
+    // try to parse hsl like "hsl(h, s%, l%)"
+    const m = /hsl\(\s*([0-9.]+)[, ]\s*([0-9.]+)%[,]?\s*([0-9.]+)%\s*\)/i.exec(cur);
+    if (m) {
+      setH(Math.round(Number(m[1])));
+      setS(Math.round(Number(m[2])));
+      setL(Math.round(Number(m[3])));
+    } else {
+      // assume hex
+      const [hh, ss, ll] = hexToHsl(cur);
+      setH(hh); setS(ss); setL(ll);
+    }
+  }
 
-  const buyPixel = () => {
+  function closePanel() {
+    setSelectedIndex(null);
+  }
+
+  function buyPixel() {
     if (selectedIndex === null) return;
-    const pixel = pixels[selectedIndex];
     setIsBuying(true);
     setTimeout(() => {
       setPixels(prev => {
-        const newPixels = [...prev];
-        newPixels[selectedIndex] = {
-          ...pixel,
-          price: pixel.price * 2,
-          bought: true,
-          // Garde couleur actuelle
-          h: pixel.h,
-          s: pixel.s,
-          l: pixel.l,
-          color: `hsl(${pixel.h}, ${pixel.s}%, ${pixel.l}%)`,
-        };
-        return newPixels;
+        const next = [...prev];
+        const cur = next[selectedIndex];
+        const newPrice = cur.price * 2;
+        next[selectedIndex] = { color: previewColor, price: newPrice };
+        return next;
       });
       setIsBuying(false);
-    }, 500);
-  };
-
-  // Pour les bordures selon prix (pour effet visuel)
-  function getBorderClass(price) {
-    if (price >= 16) return 'border-price-16';
-    if (price >= 8) return 'border-price-8';
-    if (price >= 4) return 'border-price-4';
-    if (price >= 2) return 'border-price-2';
-    return 'border-price-1';
+      closePanel();
+    }, 220);
   }
 
-  // Compte pixels achetés
-  const pixelsBought = pixels.filter(p => p.bought).length;
-  const progressPercent = (pixelsBought / TOTAL_PIXELS) * 100;
+  function resetAll() {
+    if (!confirm('Réinitialiser tous les pixels et prix à 1€ ?')) return;
+    setPixels(Array.from({ length: total }).map(() => ({ color: '#ffffff', price: START_PRICE })));
+    setSelectedIndex(null);
+  }
+
+  // apply live preview to the pixel being edited (visual only until buy)
+  function displayColorForIndex(i) {
+    if (selectedIndex === i) return previewColor;
+    return pixels[i].color;
+  }
+
+  // keyboard ESC closes
+  useEffect(() => {
+    function onKey(e) { if (e.key === 'Escape') closePanel(); }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   return (
-    <div className={styles.container}>
-      {/* Barre de navigation */}
-      <nav className={styles.navbar}>
-        <Link href="/">
-          <a className={styles.homeBtn}>Accueil</a>
-        </Link>
-        <h1 className={styles.title}>PixelProfit</h1>
+    <div className={styles.wrapper}>
+      <ParticlesBackground color="#60a5fa" density={60} />
+
+      <nav className={styles.nav}>
+        <div className={styles.navLeft}>
+          <Link href="/"><a className={styles.homeLink}>Accueil</a></Link>
+        </div>
+        <div className={styles.navRight}>
+          <button className={styles.resetBtn} onClick={resetAll} aria-label="Réinitialiser">Réinitialiser</button>
+        </div>
       </nav>
 
-      {/* Titre et sous-titre centrés */}
-      <header className={styles.headerCentered}>
-        <h2 className={styles.mainTitle}>Achetez vos pixels, faites-les fructifier !</h2>
-        <p className={styles.subtitle}>Chaque pixel commence à 1€ et double de prix à chaque achat.</p>
-      </header>
+      <main className={styles.content}>
+        <header className={styles.header}>
+          <h1 className={styles.title}>Pixel Market</h1>
+          <p className={styles.subtitle}>Chaque pixel commence à <strong>1€</strong> — le prix double à chaque achat.</p>
 
-      {/* Grille centrée */}
-      <main className={styles.mainContent}>
-        <div className={styles.grid}>
-          {pixels.map((pixel, i) => (
-            <div
-              key={i}
-              className={`${styles.pixel} ${styles[getBorderClass(pixel.price)]} ${selectedIndex === i ? styles.selected : ''}`}
-              style={{ backgroundColor: pixel.color }}
-              onClick={() => handlePixelClick(i)}
-              title={`Prix: ${pixel.price}€`}
-            >
-              <span className={styles.price}>{pixel.price}€</span>
+          <div className={styles.progressWrap} aria-hidden>
+            <div className={styles.progressInfo}>
+              <span>{purchasedCount}/{total} achetés</span>
+              <small>{progressPercent}%</small>
             </div>
-          ))}
-        </div>
-
-        {/* Sidebar de sélection */}
-        {selectedIndex !== null && (
-          <aside className={styles.sidebar}>
-            <h2>Pixel #{selectedIndex + 1}</h2>
-            <p>Prix actuel : <strong>{pixels[selectedIndex].price}€</strong></p>
-
-            <div className={styles.colorPicker}>
-              <label>
-                Teinte (H): {h}
-                <input
-                  type="range"
-                  min="0"
-                  max="360"
-                  value={h}
-                  onChange={(e) => setH(+e.target.value)}
-                />
-              </label>
-              <label>
-                Saturation (S): {s}%
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={s}
-                  onChange={(e) => setS(+e.target.value)}
-                />
-              </label>
-              <label>
-                Luminosité (L): {l}%
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={l}
-                  onChange={(e) => setL(+e.target.value)}
-                />
-              </label>
+            <div className={styles.progressBar}>
+              <div className={styles.progressFill} style={{ width: `${progressPercent}%` }} />
             </div>
+          </div>
+        </header>
 
-            <button
-              className={styles.buyBtn}
-              onClick={buyPixel}
-              disabled={isBuying}
-            >
-              Acheter ce pixel
-            </button>
+        <section className={styles.gridArea} aria-label="Zone principale - grille centrée">
+          <div className={styles.gridWrapper}>
+            <div className={styles.grid} role="grid" aria-label="Grille de pixels 10 par 10">
+              {pixels.map((p, i) => {
+                const borderClass = getBorderPriceClass(p.price);
+                return (
+                  <button
+                    key={i}
+                    role="gridcell"
+                    className={`${styles.pixel} ${styles[borderClass]}`}
+                    onClick={() => openPixel(i)}
+                    aria-label={`Pixel ${i + 1} - Prix ${p.price} euro`}
+                    style={{ background: displayColorForIndex(i) }}
+                  >
+                    <span className={styles.pixelPrice}>{p.price}€</span>
+                    {p.price > START_PRICE && <span className={styles.bought}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* panel (appears to the right on wide screens, below on small) */}
+          <aside className={styles.panel} aria-hidden={selectedIndex === null}>
+            {selectedIndex === null ? (
+              <div>
+                <h3>Choisissez un pixel</h3>
+                <p>Cliquez sur un pixel pour modifier sa couleur et l'acheter (le prix double).</p>
+              </div>
+            ) : (
+              <div>
+                <h3>Pixel #{selectedIndex + 1}</h3>
+                <p>Prix actuel : <strong>{pixels[selectedIndex].price}€</strong></p>
+
+                <div className={styles.previewRow}>
+                  <div className={styles.livePreview} style={{ background: previewColor }} aria-hidden />
+                  <div>
+                    <div className={styles.previewLabel}>Aperçu en direct</div>
+                    <div className={styles.previewCode}>{previewColor}</div>
+                  </div>
+                </div>
+
+                <div className={styles.sliders}>
+                  <label>Teinte (H) {h}</label>
+                  <input type="range" min="0" max="360" value={h} onChange={(e) => setH(Number(e.target.value))} />
+
+                  <label>Saturation (S) {s}%</label>
+                  <input type="range" min="0" max="100" value={s} onChange={(e) => setS(Number(e.target.value))} />
+
+                  <label>Luminosité (L) {l}%</label>
+                  <input type="range" min="0" max="100" value={l} onChange={(e) => setL(Number(e.target.value))} />
+                </div>
+
+                <div className={styles.actions}>
+                  <button className={styles.buyBtn} onClick={buyPixel} disabled={isBuying}>
+                    {isBuying ? 'Validation…' : `Valider (double le prix → ${pixels[selectedIndex].price * 2}€)`}
+                  </button>
+                  <button className={styles.cancelBtn} onClick={closePanel}>Annuler</button>
+                </div>
+              </div>
+            )}
           </aside>
-        )}
-      </main>
+        </section>
 
-      {/* Barre de progression */}
-      <footer className={styles.footer}>
-        <div className={styles.progressWrapper}>
-          <div className={styles.progressBar} style={{ width: `${progressPercent}%` }} />
-        </div>
-        <p>{pixelsBought} pixel{pixelsBought !== 1 ? 's' : ''} acheté{pixelsBought !== 1 ? 's' : ''} sur {TOTAL_PIXELS}</p>
-      </footer>
+        <footer className={styles.footer}>
+          © 2025 PixelProfit — Transforme des pixels en opportunités
+        </footer>
+      </main>
     </div>
   );
 }
+
