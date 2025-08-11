@@ -4,302 +4,282 @@ import Link from 'next/link';
 import ParticlesBackground from '../components/ParticlesBackground';
 
 /**
- * pages/game.js
- * Canvas-based optimized implementation for 1_000_000 pixels (1000x1000).
+ * Client-only heavy canvas page for 1_000_000 pixels (1000x1000).
+ * - No use of `window` / `document` at top-level → safe for SSR.
+ * - All canvas / devicePixelRatio / event handling lives inside useEffect (client).
+ * - Sparse storage: typed arrays in refs; persist non-default pixels to localStorage.
  *
- * Storage:
- * - colorArray: Uint32Array length = GRID_SIZE*GRID_SIZE, stores 0 for default (white) or 0xRRGGBB value.
- * - expArray: Uint8Array length = GRID_SIZE*GRID_SIZE, stores exponent n where price = INITIAL_PRICE_CENTS * (2^n).
- *
- * Persistence:
- * - Only modified pixels (non-default) are saved to localStorage as a compact object { idx: [hex, exp], ... }.
- *
- * Interaction:
- * - Wheel: zoom (exponential) centered on cursor
- * - Drag (left mouse): pan
- * - Click (small movement): select pixel -> open editor
- * - Hover: highlight pixel under cursor, show live preview color if color picker chosen
+ * How it works:
+ * - Click small movement to select pixel (opens editor).
+ * - Drag (hold mouse) to pan.
+ * - Wheel to zoom (exponential), centered on cursor.
+ * - Color picker previews live on hover & selection.
+ * - Buy button updates typed arrays and persists (localStorage).
  */
 
 const GRID_SIZE = 1000;
 const TOTAL_PIXELS = GRID_SIZE * GRID_SIZE;
-const STORAGE_KEY = 'mega_pixel_state_v2';
-const INITIAL_PRICE_CENTS = 1; // 1 centime = 0.01€
-const DEFAULT_COLOR_HEX = '#ffffff'; // visual default
-
-const MIN_SCALE = 1.2;   // px per pixel (very zoomed out)
-const MAX_SCALE = 64;    // px per pixel (very zoomed in)
-const DEFAULT_SCALE = 8; // starting pixel size (px)
+const STORAGE_KEY = 'mega_pixel_state_v3';
+const INITIAL_PRICE_CENTS = 1;
+const DEFAULT_COLOR_HEX = '#ffffff';
+const DEFAULT_SCALE = 8;
+const MIN_SCALE = 1.2;
+const MAX_SCALE = 64;
 
 function centsToEuroString(cents) {
   return (cents / 100).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 }
 function hexToUint32(hex) {
-  if (!hex) return 0;
-  return parseInt(hex.replace('#', ''), 16) >>> 0;
+  return parseInt((hex || '#000000').replace('#', ''), 16) >>> 0;
 }
 function uint32ToHex(n) {
-  return '#' + n.toString(16).padStart(6, '0');
+  return '#' + (n >>> 0).toString(16).padStart(6, '0');
 }
 
 export default function Game() {
-  // refs for heavy mutable state (avoid re-render)
+  // refs for heavy mutable structures (keeps React renders minimal)
   const canvasRef = useRef(null);
-  const dprRef = useRef(window.devicePixelRatio || 1);
-  const offsetRef = useRef({ x: 0, y: 0 }); // top-left of grid in CSS px
-  const scaleRef = useRef(DEFAULT_SCALE); // px per pixel
+  const dprRef = useRef(1);
+  const offsetRef = useRef({ x: 0, y: 0 });
+  const scaleRef = useRef(DEFAULT_SCALE);
   const draggingRef = useRef(false);
-  const lastPointerRef = useRef({ x: 0, y: 0 });
+  const lastPointerRef = useRef({ x: 0, y: 0, time: 0 });
   const hoverRef = useRef({ row: -1, col: -1 });
-  const tickingRef = useRef(false);
 
-  // typed arrays stored in refs to avoid re-allocations
+  // typed arrays stored in refs: created on client inside effect
   const colorArrayRef = useRef(null); // Uint32Array
   const expArrayRef = useRef(null); // Uint8Array
 
-  // UI state (keeps only UI bits that need React rendering)
-  const [, setTick] = useState(0); // cheap rerender trigger
+  // UI state (React-driven)
+  const [isClient, setIsClient] = useState(false); // used to avoid SSR use of canvas
+  const [, setTick] = useState(0); // cheap re-render trigger
   const triggerRender = useCallback(() => setTick(n => n + 1), []);
-
-  const [selected, setSelected] = useState(null); // { idx, row, col, exp, colorHex }
-  const [pickerColor, setPickerColor] = useState('#7cc4ff'); // hex color from <input type="color">
+  const [selected, setSelected] = useState(null); // { idx, row, col }
+  const [pickerColor, setPickerColor] = useState('#7cc4ff');
   const [isBuying, setIsBuying] = useState(false);
 
-  // initialize typed arrays and load persisted state
-  useEffect(() => {
-    colorArrayRef.current = new Uint32Array(TOTAL_PIXELS);
-    expArrayRef.current = new Uint8Array(TOTAL_PIXELS); // default 0 exponent => price INITIAL_PRICE_CENTS
-    // load persisted (compact)
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw); // { idx: [hex, exp], ... }
-        for (const [k, v] of Object.entries(parsed)) {
-          const idx = Number(k);
-          const [hex, exp] = v;
-          colorArrayRef.current[idx] = hexToUint32(hex);
-          expArrayRef.current[idx] = Math.min(30, Math.max(0, Number(exp) || 0)); // clamp exponent
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to load persisted pixel state', e);
-    }
-    triggerRender();
-    // center grid in canvas after mount (in layout effect would be better, but this works)
-    setTimeout(() => {
-      const c = canvasRef.current;
-      if (!c) return;
-      const rect = c.getBoundingClientRect();
-      const s = scaleRef.current;
-      // center grid area
-      offsetRef.current.x = Math.round((rect.width - GRID_SIZE * s) / 2);
-      offsetRef.current.y = Math.round((rect.height - GRID_SIZE * s) / 2);
-      triggerRender();
-    }, 60);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // buy request mechanism: used to request a buy from UI into effect-managed arrays
+  const buyRequestRef = useRef({ id: 0, payload: null });
+  const [buyRequestTick, setBuyRequestTick] = useState(0);
+  const requestBuy = useCallback((payload) => {
+    buyRequestRef.current.payload = payload;
+    buyRequestRef.current.id++;
+    setBuyRequestTick(buyRequestRef.current.id);
   }, []);
 
-  // persist changes with debounce (only modified pixels)
-  const persistTimerRef = useRef(null);
-  const persist = useCallback(() => {
-    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
-    persistTimerRef.current = setTimeout(() => {
+  // persist with debounce
+  const persistTimer = useRef(null);
+  const persistToStorage = useCallback(() => {
+    if (!colorArrayRef.current || !expArrayRef.current) return;
+    if (persistTimer.current) clearTimeout(persistTimer.current);
+    persistTimer.current = setTimeout(() => {
       try {
-        // build compact object of non-default pixels
         const out = {};
         const colors = colorArrayRef.current;
         const exps = expArrayRef.current;
-        for (let i = 0; i < TOTAL_PIXELS; i++) {
+        for (let i = 0; i < colors.length; i++) {
           if (exps[i] !== 0 || colors[i] !== 0) {
             out[i] = [uint32ToHex(colors[i] || 0), exps[i]];
           }
         }
         localStorage.setItem(STORAGE_KEY, JSON.stringify(out));
       } catch (e) {
-        console.warn('Failed to persist pixel state', e);
+        console.warn('Persist failed', e);
       }
-    }, 300);
+    }, 250);
   }, []);
 
-  // compute purchased count quickly (scan expArray for non-zero OR color != 0)
-  const getPurchasedCount = useCallback(() => {
-    const exps = expArrayRef.current;
+  // purchased count helper (scans arrays but triggered only on render request)
+  const computePurchasedCount = useCallback(() => {
     const colors = colorArrayRef.current;
+    const exps = expArrayRef.current;
+    if (!colors || !exps) return 0;
     let c = 0;
-    for (let i = 0; i < exps.length; i++) {
-      if (exps[i] !== 0 || colors[i] !== 0) c++;
+    for (let i = 0; i < colors.length; i++) {
+      if (colors[i] !== 0 || exps[i] !== 0) c++;
     }
     return c;
   }, []);
 
-  // drawing routine
-  const drawRef = useRef(null);
-  drawRef.current = useCallback(() => {
+  const purchasedCount = useMemo(() => computePurchasedCount(), [/* updates via triggerRender */]);
+
+  // ---- CLIENT-SIDE INITIALIZATION & RENDER LOOP ----
+  useEffect(() => {
+    // mark client
+    setIsClient(true);
+
+    // create typed arrays
+    colorArrayRef.current = new Uint32Array(TOTAL_PIXELS);
+    expArrayRef.current = new Uint8Array(TOTAL_PIXELS);
+
+    // load persisted
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        for (const [k, v] of Object.entries(parsed)) {
+          const idx = Number(k);
+          const [hex, exp] = v;
+          colorArrayRef.current[idx] = hexToUint32(hex);
+          expArrayRef.current[idx] = Math.min(30, Math.max(0, Number(exp) || 0));
+        }
+      }
+    } catch (e) {
+      console.warn('Load persisted error', e);
+    }
+
     const canvas = canvasRef.current;
     if (!canvas) return;
+
     const ctx = canvas.getContext('2d');
-    const rect = canvas.getBoundingClientRect();
-    const w = Math.max(1, rect.width);
-    const h = Math.max(1, rect.height);
-    const dpr = dprRef.current = window.devicePixelRatio || 1;
-    // resize backing store
-    if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // clear
-    ctx.clearRect(0, 0, w, h);
+    dprRef.current = window.devicePixelRatio || 1;
 
-    // background gradient
-    const g = ctx.createLinearGradient(0, 0, w, h);
-    g.addColorStop(0, '#07102a');
-    g.addColorStop(1, '#08162f');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
-
-    const s = scaleRef.current;
-    const off = offsetRef.current;
-
-    // quick visible range in grid coordinates
-    const startCol = Math.max(0, Math.floor((-off.x) / s));
-    const startRow = Math.max(0, Math.floor((-off.y) / s));
-    const endCol = Math.min(GRID_SIZE - 1, Math.ceil((w - off.x) / s));
-    const endRow = Math.min(GRID_SIZE - 1, Math.ceil((h - off.y) / s));
-
-    // If zoomed out very far (s small), drawing every cell is heavy.
-    // Strategy:
-    // - if s < 4 px: draw only purchased pixels as colored rects; don't draw individual empty cells.
-    // - if s >= 4 px: draw visible cell-by-cell for nicer visuals (grid lines, shadows).
-    const drawFullGrid = s >= 4;
-
-    // draw grid background area (clipped)
-    const gridX = off.x;
-    const gridY = off.y;
-    const gridW = GRID_SIZE * s;
-    const gridH = GRID_SIZE * s;
-    // subtle border
-    ctx.save();
-    ctx.fillStyle = 'rgba(255,255,255,0.01)';
-    // draw grid area (clipped)
-    ctx.fillRect(gridX, gridY, gridW, gridH);
-    ctx.restore();
-
-    // draw purchased pixels (iterate entire typed arrays but skip invisible ones)
-    const colors = colorArrayRef.current;
-    const exps = expArrayRef.current;
-    // Loop over purchased only: scanning all 1M every frame is heavy; but we optimize:
-    // If purchased count is low (< ~5000), iterate over all and check; otherwise, iterate over visible range.
-    // We approximate purchased count from scanning small sample? Simpler: estimate purchases by counting changed entries in localStorage parse would be heavy.
-    // Practical approach: if s is small (zoomed out) we only draw purchased pixels by scanning full arrays but with simple checks.
-    let purchasedCount = 0;
-    // count could be expensive; we avoid full count each frame by calculating a partial count on demand when HUD requests it.
-
-    if (!drawFullGrid) {
-      // draw only purchased pixels (sparse-looking)
-      // iterate in chunks to avoid blocking too long (but here single-threaded)
-      for (let idx = 0; idx < colors.length; idx++) {
-        const col = idx % GRID_SIZE;
-        const row = Math.floor(idx / GRID_SIZE);
-        const c32 = colors[idx];
-        const e = exps[idx];
-        if (c32 === 0 && e === 0) continue;
-        // check visible
-        if (col < startCol || col > endCol || row < startRow || row > endRow) continue;
-        const px = Math.round(off.x + col * s);
-        const py = Math.round(off.y + row * s);
-        // fill pixel
-        ctx.fillStyle = uint32ToHex(c32 || 0);
-        ctx.fillRect(px, py, Math.ceil(s), Math.ceil(s));
+    // helper: resize canvas backing store to CSS size * dpr
+    function resizeCanvasToDisplaySize() {
+      const rect = canvas.getBoundingClientRect();
+      const w = Math.max(1, rect.width);
+      const h = Math.max(1, rect.height);
+      const dpr = dprRef.current;
+      const bw = Math.floor(w * dpr);
+      const bh = Math.floor(h * dpr);
+      if (canvas.width !== bw || canvas.height !== bh) {
+        canvas.width = bw;
+        canvas.height = bh;
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
       }
-    } else {
-      // draw every visible cell (grid)
-      // draw background cells (unpurchased) as subtle squares (light)
-      for (let r = startRow; r <= endRow; r++) {
-        const base = r * GRID_SIZE;
-        for (let c = startCol; c <= endCol; c++) {
-          const idx = base + c;
-          const px = off.x + c * s;
-          const py = off.y + r * s;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    // center grid initially
+    function centerGrid() {
+      const rect = canvas.getBoundingClientRect();
+      const s = scaleRef.current;
+      offsetRef.current.x = Math.round((rect.width - GRID_SIZE * s) / 2);
+      offsetRef.current.y = Math.round((rect.height - GRID_SIZE * s) / 2);
+    }
+
+    // initial center
+    resizeCanvasToDisplaySize();
+    centerGrid();
+
+    // draw function
+    function draw() {
+      resizeCanvasToDisplaySize();
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      const s = scaleRef.current;
+      const off = offsetRef.current;
+      // clear + background
+      const grad = ctx.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, '#07102a');
+      grad.addColorStop(1, '#08162f');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+
+      // visible range
+      const startCol = Math.max(0, Math.floor((-off.x) / s));
+      const startRow = Math.max(0, Math.floor((-off.y) / s));
+      const endCol = Math.min(GRID_SIZE - 1, Math.ceil((w - off.x) / s));
+      const endRow = Math.min(GRID_SIZE - 1, Math.ceil((h - off.y) / s));
+
+      // draw minor background for grid (subtle)
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.01)';
+      ctx.fillRect(off.x, off.y, GRID_SIZE * s, GRID_SIZE * s);
+      ctx.restore();
+
+      const colors = colorArrayRef.current;
+      const exps = expArrayRef.current;
+
+      // choose whether to draw full visible grid or only purchased depending on scale
+      const drawFull = s >= 4;
+
+      if (!drawFull) {
+        // draw only purchased pixels
+        for (let idx = 0; idx < colors.length; idx++) {
           const c32 = colors[idx];
-          if (c32 === 0 && expArrayRef.current[idx] === 0) {
-            // unpurchased
-            ctx.fillStyle = '#ffffff';
-            ctx.globalAlpha = 0.035;
-            ctx.fillRect(px, py, s, s);
-            ctx.globalAlpha = 1;
-            // border subtle
-            ctx.strokeStyle = 'rgba(255,255,255,0.02)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(Math.round(px) + 0.5, Math.round(py) + 0.5, Math.round(s) - 1, Math.round(s) - 1);
-          } else {
-            ctx.fillStyle = uint32ToHex(c32 || 0);
-            ctx.fillRect(px, py, s, s);
-            // border for purchased
-            ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-            ctx.lineWidth = Math.max(1, s * 0.06);
-            ctx.strokeRect(Math.round(px) + 0.5, Math.round(py) + 0.5, Math.round(s) - 1, Math.round(s) - 1);
+          const e = exps[idx];
+          if (c32 === 0 && e === 0) continue;
+          const row = Math.floor(idx / GRID_SIZE);
+          const col = idx % GRID_SIZE;
+          if (col < startCol || col > endCol || row < startRow || row > endRow) continue;
+          const px = Math.round(off.x + col * s);
+          const py = Math.round(off.y + row * s);
+          ctx.fillStyle = uint32ToHex(c32 || 0);
+          ctx.fillRect(px, py, Math.ceil(s), Math.ceil(s));
+        }
+      } else {
+        // draw each visible cell
+        for (let r = startRow; r <= endRow; r++) {
+          const base = r * GRID_SIZE;
+          for (let c = startCol; c <= endCol; c++) {
+            const idx = base + c;
+            const c32 = colors[idx];
+            const px = off.x + c * s;
+            const py = off.y + r * s;
+            if (c32 === 0 && exps[idx] === 0) {
+              ctx.fillStyle = '#ffffff';
+              ctx.globalAlpha = 0.035;
+              ctx.fillRect(px, py, s, s);
+              ctx.globalAlpha = 1;
+              ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(Math.round(px) + 0.5, Math.round(py) + 0.5, Math.round(s) - 1, Math.round(s) - 1);
+            } else {
+              ctx.fillStyle = uint32ToHex(c32 || 0);
+              ctx.fillRect(px, py, s, s);
+              ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+              ctx.lineWidth = Math.max(1, s * 0.06);
+              ctx.strokeRect(Math.round(px) + 0.5, Math.round(py) + 0.5, Math.round(s) - 1, Math.round(s) - 1);
+            }
           }
         }
       }
-    }
 
-    // hover highlight & live preview
-    const hv = hoverRef.current;
-    if (hv && hv.row >= 0 && hv.col >= 0 && hv.row < GRID_SIZE && hv.col < GRID_SIZE) {
-      const px = off.x + hv.col * s;
-      const py = off.y + hv.row * s;
-      // Draw preview: if there's a pickerColor, show it translucent
-      ctx.save();
-      ctx.globalAlpha = 0.92;
-      ctx.fillStyle = pickerColor;
-      ctx.fillRect(px, py, s, s);
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = '#ffffff66';
-      ctx.lineWidth = Math.max(1, s * 0.08);
-      ctx.strokeRect(Math.round(px) + 0.5, Math.round(py) + 0.5, Math.round(s) - 1, Math.round(s) - 1);
-      ctx.restore();
-    }
-
-    // draw faint grid lines only when zoomed enough
-    if (s >= 6) {
-      ctx.beginPath();
-      ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-      for (let c = startCol; c <= endCol + 1; c++) {
-        const x = Math.round(off.x + c * s) + 0.5;
-        ctx.moveTo(x, Math.max(0, off.y + startRow * s));
-        ctx.lineTo(x, Math.min(h, off.y + (endRow + 1) * s));
+      // hover preview
+      const hv = hoverRef.current;
+      if (hv && hv.row >= 0 && hv.col >= 0 && hv.row < GRID_SIZE && hv.col < GRID_SIZE) {
+        const px = off.x + hv.col * s;
+        const py = off.y + hv.row * s;
+        ctx.save();
+        ctx.globalAlpha = 0.92;
+        ctx.fillStyle = pickerColor;
+        ctx.fillRect(px, py, s, s);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#ffffff66';
+        ctx.lineWidth = Math.max(1, s * 0.08);
+        ctx.strokeRect(Math.round(px) + 0.5, Math.round(py) + 0.5, Math.round(s) - 1, Math.round(s) - 1);
+        ctx.restore();
       }
-      for (let r = startRow; r <= endRow + 1; r++) {
-        const y = Math.round(off.y + r * s) + 0.5;
-        ctx.moveTo(Math.max(0, off.x + startCol * s), y);
-        ctx.lineTo(Math.min(w, off.x + (endCol + 1) * s), y);
+
+      // grid lines when zoomed
+      if (s >= 6) {
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+        for (let c = startCol; c <= endCol + 1; c++) {
+          const x = Math.round(off.x + c * s) + 0.5;
+          ctx.moveTo(x, Math.max(0, off.y + startRow * s));
+          ctx.lineTo(x, Math.min(h, off.y + (endRow + 1) * s));
+        }
+        for (let r = startRow; r <= endRow + 1; r++) {
+          const y = Math.round(off.y + r * s) + 0.5;
+          ctx.moveTo(Math.max(0, off.x + startCol * s), y);
+          ctx.lineTo(Math.min(w, off.x + (endCol + 1) * s), y);
+        }
+        ctx.stroke();
       }
-      ctx.stroke();
     }
 
-    // draw subtle frame or overlay (optional)
-    // done
-  }, []);
-
-  // animation loop
-  useEffect(() => {
     let raf = 0;
     const loop = () => {
-      drawRef.current();
+      draw();
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, []);
 
-  // pointer/interaction handlers
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
+    // pointer logic
     function toGrid(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
       const x = clientX - rect.left;
@@ -324,12 +304,10 @@ export default function Game() {
       canvas.releasePointerCapture?.(e.pointerId);
       const last = lastPointerRef.current;
       draggingRef.current = false;
-      // treat as click if movement small
       const dx = Math.abs(e.clientX - last.x);
       const dy = Math.abs(e.clientY - last.y);
       const dt = Date.now() - last.time;
       if (dx < 6 && dy < 6 && dt < 400) {
-        // click -> select pixel
         const pos = toGrid(e.clientX, e.clientY);
         if (pos.row >= 0 && pos.row < GRID_SIZE && pos.col >= 0 && pos.col < GRID_SIZE) {
           const idx = pos.row * GRID_SIZE + pos.col;
@@ -339,22 +317,18 @@ export default function Game() {
           setSelected({ idx, row: pos.row, col: pos.col, exp: exp || 0, colorHex });
           setPickerColor(colorHex);
         } else {
-          // clicked outside grid -> close panel
           setSelected(null);
         }
       }
     }
     function onPointerMove(e) {
       if (draggingRef.current && (e.buttons & 1)) {
-        // pan
         const dx = e.clientX - lastPointerRef.current.x;
         const dy = e.clientY - lastPointerRef.current.y;
         lastPointerRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
         offsetRef.current.x += dx;
         offsetRef.current.y += dy;
-        // request render (we're in RAF loop so it's fine)
       } else {
-        // hover update
         const pos = toGrid(e.clientX, e.clientY);
         if (pos.row !== hoverRef.current.row || pos.col !== hoverRef.current.col) {
           hoverRef.current.row = pos.row;
@@ -364,22 +338,18 @@ export default function Game() {
     }
 
     function onWheel(e) {
-      // zoom centered on cursor
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       const oldScale = scaleRef.current;
-      // exponential zoom factor
-      const delta = -e.deltaY; // positive -> zoom in
-      const zoomFactor = Math.exp(delta * 0.0016); // tweak for feeling
-      let newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, oldScale * zoomFactor));
-      // keep world point under mouse stationary:
+      const delta = -e.deltaY;
+      const zoomFactor = Math.exp(delta * 0.0016);
+      const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, oldScale * zoomFactor));
       const worldX = (mx - offsetRef.current.x) / oldScale;
       const worldY = (my - offsetRef.current.y) / oldScale;
       offsetRef.current.x = mx - worldX * newScale;
       offsetRef.current.y = my - worldY * newScale;
       scaleRef.current = newScale;
-      // small re-render
       e.preventDefault();
     }
 
@@ -388,66 +358,99 @@ export default function Game() {
     window.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
+    // handle external buy requests (from UI)
+    const buyChecker = setInterval(() => {
+      const payload = buyRequestRef.current.payload;
+      if (!payload) return;
+      // payload: { idx, colorHex }
+      const idx = payload.idx;
+      const colorHex = payload.colorHex;
+      // update arrays
+      const prevExp = expArrayRef.current[idx] || 0;
+      const nextExp = Math.min(30, prevExp + 1);
+      expArrayRef.current[idx] = nextExp;
+      colorArrayRef.current[idx] = hexToUint32(colorHex);
+      buyRequestRef.current.payload = null;
+      persistToStorage();
+      triggerRender();
+    }, 120);
+
+    // resize observer to re-center on window resize
+    function onResize() {
+      resizeCanvasToDisplaySize();
+      // keep current offset; optionally recenter if grid smaller than viewport
+    }
+    window.addEventListener('resize', onResize);
+
     return () => {
+      cancelAnimationFrame(raf);
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('wheel', onWheel);
+      window.removeEventListener('resize', onResize);
+      clearInterval(buyChecker);
     };
+    // only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // buy logic
+  // process buyRequest tick (UI -> effect sync): UI calls requestBuy which toggles buyRequestTick,
+  // effect loop polls buyRequestRef, so we do not need an effect here. But we still allow immediate feedback:
+  useEffect(() => {
+    // used to trigger HUD updates after buys (persist handled in effect)
+    triggerRender();
+  }, [buyRequestTick, triggerRender]);
+
+  // UI handler: purchase selected pixel (requests the effect to apply)
   const buySelected = useCallback(async () => {
     if (!selected) return;
     setIsBuying(true);
-    // simulate a small delay for UX
-    await new Promise(r => setTimeout(r, 160));
-    const idx = selected.idx;
-    const currentExp = expArrayRef.current[idx] || 0;
-    const nextExp = Math.min(30, currentExp + 1); // clamp exponent to avoid absurd values
-    expArrayRef.current[idx] = nextExp;
-    colorArrayRef.current[idx] = hexToUint32(pickerColor);
-    persist();
-    triggerRender();
+    // queue payload for effect to process (which updates arrays & persists)
+    requestBuy({ idx: selected.idx, colorHex: pickerColor });
+    // small UX delay
+    await new Promise((r) => setTimeout(r, 180));
     setIsBuying(false);
     setSelected(null);
-  }, [selected, pickerColor, persist, triggerRender]);
+  }, [selected, pickerColor, requestBuy]);
 
-  // delete pixel (for testing)
+  const resetAll = useCallback(() => {
+    if (!confirm('Réinitialiser tous les pixels achetés ?')) return;
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      // reset arrays (must be done client-side: reinitialize and reload page)
+      if (colorArrayRef.current && expArrayRef.current) {
+        colorArrayRef.current.fill(0);
+        expArrayRef.current.fill(0);
+      }
+      // reload to reinit
+      location.reload();
+    } catch (e) {
+      console.warn(e);
+      location.reload();
+    }
+  }, []);
+
   const deleteSelected = useCallback(() => {
     if (!selected) return;
-    const idx = selected.idx;
-    expArrayRef.current[idx] = 0;
-    colorArrayRef.current[idx] = 0;
-    persist();
+    expArrayRef.current[selected.idx] = 0;
+    colorArrayRef.current[selected.idx] = 0;
+    persistToStorage();
     triggerRender();
     setSelected(null);
-  }, [selected, persist, triggerRender]);
+  }, [selected, persistToStorage, triggerRender]);
 
-  // computed HUD values (lightweight)
-  const purchasedCount = useMemo(() => {
-    // to avoid scanning 1M on every render, compute only when requested via triggerRender
-    return getPurchasedCount();
-  }, [getPurchasedCount, /* triggered by setTick */]);
-
-  const percentSold = Math.round((purchasedCount / TOTAL_PIXELS) * 10000) / 100;
-
-  // UI: price display for selected
+  // selected price display
   const selectedPriceDisplay = useMemo(() => {
     if (!selected) return centsToEuroString(INITIAL_PRICE_CENTS);
-    const idx = selected.idx;
-    const exp = expArrayRef.current[idx] || 0;
-    const priceCents = INITIAL_PRICE_CENTS * (2 ** exp);
-    return centsToEuroString(priceCents);
+    const exp = expArrayRef.current[selected.idx] || 0;
+    return centsToEuroString(INITIAL_PRICE_CENTS * (2 ** exp));
   }, [selected]);
 
-  // small helpers for CSS in JS UI
-  const hudStyle = {
-    position: 'absolute', left: 20, top: 20, zIndex: 60, color: '#d8eeff', fontWeight: 700
-  };
-
+  // render
   return (
     <div style={{ position: 'relative', minHeight: '100vh', overflow: 'hidden', fontFamily: 'Inter, system-ui, Arial, sans-serif' }}>
+      {/* ParticlesBackground is safe (it runs its canvas in useEffect) */}
       <ParticlesBackground color="#60a5fa" density={36} />
 
       {/* Nav */}
@@ -466,7 +469,7 @@ export default function Game() {
             textDecoration: 'none',
             boxShadow: '0 8px 20px rgba(2,6,22,0.5)'
           }}>Accueil</a></Link>
-          <button onClick={() => { if (confirm('Réinitialiser tout ?')) { localStorage.removeItem(STORAGE_KEY); location.reload(); } }} style={{
+          <button onClick={resetAll} style={{
             background: 'transparent', border: '1px solid rgba(255,255,255,0.04)', color: '#dfefff',
             padding: '6px 10px', borderRadius: 8, cursor: 'pointer'
           }}>Réinitialiser</button>
@@ -474,11 +477,13 @@ export default function Game() {
 
         <div style={{ color: '#bcdcff', fontWeight: 600, fontSize: 13 }}>
           <span style={{ marginRight: 12 }}>Pixels achetés : {purchasedCount.toLocaleString()}</span>
-          <span style={{ color: 'rgba(255,255,255,0.6)' }}>{percentSold}%</span>
+          <span style={{ color: 'rgba(255,255,255,0.6)' }}>
+            {Math.round((purchasedCount / TOTAL_PIXELS) * 10000) / 100}%
+          </span>
         </div>
       </nav>
 
-      {/* Title center */}
+      {/* Title */}
       <header style={{
         position: 'absolute', top: 72, left: 0, right: 0, textAlign: 'center', zIndex: 70, pointerEvents: 'none'
       }}>
@@ -500,7 +505,7 @@ export default function Game() {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cfe5ff', fontWeight: 700, fontSize: 13 }}>
           <div>{purchasedCount.toLocaleString()} / {TOTAL_PIXELS.toLocaleString()} achetés</div>
-          <div>{percentSold}%</div>
+          <div>{Math.round((purchasedCount / TOTAL_PIXELS) * 10000) / 100}%</div>
         </div>
         <div style={{
           height: 10, background: 'rgba(255,255,255,0.03)', borderRadius: 999, marginTop: 8, overflow: 'hidden', boxShadow: 'inset 0 2px 6px rgba(2,6,22,0.5)'
@@ -514,15 +519,24 @@ export default function Game() {
         </div>
       </div>
 
-      {/* Canvas center */}
+      {/* Canvas */}
       <div style={{
         position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
         zIndex: 40, pointerEvents: 'auto'
       }}>
-        <canvas ref={canvasRef} style={{
-          width: '92vw', height: '72vh', maxWidth: '1600px', maxHeight: '1000px',
-          borderRadius: 12, boxShadow: '0 40px 120px rgba(2,6,22,0.7)', background: 'transparent', touchAction: 'none'
-        }} />
+        <canvas
+          ref={canvasRef}
+          style={{
+            width: '92vw',
+            height: '72vh',
+            maxWidth: '1600px',
+            maxHeight: '1000px',
+            borderRadius: 12,
+            boxShadow: '0 40px 120px rgba(2,6,22,0.7)',
+            background: 'transparent',
+            touchAction: 'none'
+          }}
+        />
       </div>
 
       {/* Editor panel */}
@@ -537,9 +551,7 @@ export default function Game() {
               <div>
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#e8f3ff' }}>Pixel #{selected.row},{selected.col}</div>
                 <div style={{ fontSize: 12, color: '#cfe5ff', marginTop: 4 }}>
-                  Prix actuel : <strong>
-                    {centsToEuroString(INITIAL_PRICE_CENTS * (2 ** (expArrayRef.current[selected.idx] || 0)))}
-                  </strong>
+                  Prix actuel : <strong>{selectedPriceDisplay}</strong>
                 </div>
               </div>
               <div>
@@ -598,6 +610,7 @@ export default function Game() {
     </div>
   );
 }
+
 
 
 
