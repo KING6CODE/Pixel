@@ -1,14 +1,5 @@
 /* styles/Game.module.css */
 
-html, body, #__next {
-  height: 100%;
-  margin: 0;
-  background: #07102a;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  color: #e6eef8;
-  overflow: hidden; /* On évite scroll pour mieux centrer */
-}
-
 .navbar {
   width: 100%;
   padding: 12px 32px;
@@ -68,8 +59,8 @@ html, body, #__next {
 }
 
 .main {
-  height: 100vh;
-  padding-top: 72px; /* Pour laisser place à la navbar fixe */
+  height: calc(100vh - 72px);
+  padding-top: 0;
   display: flex;
   flex-direction: column;
   justify-content: center; /* Centrage vertical */
@@ -250,3 +241,4 @@ html, body, #__next {
   opacity: 0.5;
   cursor: default;
 }
+
