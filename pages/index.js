@@ -1,249 +1,277 @@
-import React, { useState, useEffect } from "react";
-import styles from "../styles/grid.module.css";
+// pages/index.js
+import { useEffect, useMemo, useRef, useState } from 'react';
+import ParticlesBackground from '../components/ParticlesBackground';
+import styles from '../styles/grid.module.css';
 
-const initialPixels = Array(100).fill(null).map(() => ({
-  color: "#ffffff",
-  price: 1,
-  bought: false,
-}));
+const GRID_SIZE = 10;
+const START_PRICE = 1;
 
-const priceBorders = [
-  { price: 1, className: styles.borderPrice1 },
-  { price: 2, className: styles.borderPrice2 },
-  { price: 4, className: styles.borderPrice4 },
-  { price: 8, className: styles.borderPrice8 },
-  { price: 16, className: styles.borderPrice16 },
-];
-
-// Fonction pour obtenir la classe bordure correspondant au prix
+/* helper: get border class based on price */
 function getBorderClass(price) {
-  if (price >= 16) return `${styles.borderPrice16} ${styles.glow}`;
-  if (price >= 8) return styles.borderPrice8;
-  if (price >= 4) return styles.borderPrice4;
-  if (price >= 2) return styles.borderPrice2;
-  return styles.borderPrice1;
+  if (price < 2) return 'border-price-1';
+  if (price < 4) return 'border-price-2';
+  if (price < 8) return 'border-price-4';
+  if (price < 16) return 'border-price-8';
+  return 'border-price-16';
+}
+
+/* convert HSL to CSS string */
+function hslToCss(h, s, l) {
+  return `hsl(${h} ${s}% ${l}%)`;
 }
 
 export default function Home() {
-  const [pixels, setPixels] = useState(initialPixels);
-  const [selectedPixelIndex, setSelectedPixelIndex] = useState(null);
-  const [hue, setHue] = useState(0);
-  const [saturation, setSaturation] = useState(100);
-  const [lightness, setLightness] = useState(50);
-  const [showIntro, setShowIntro] = useState(true);
+  const total = GRID_SIZE * GRID_SIZE;
 
-  // Couleur HSL construite
-  const selectedColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+  // pixels state: each { color: 'hsl(...)' , price: number }
+  const [pixels, setPixels] = useState(() =>
+    Array.from({ length: total }).map(() => ({ color: '#ffffff', price: START_PRICE }))
+  );
 
-  // Appliquer la couleur choisie au pixel et doubler le prix
-  function handleValidate() {
-    if (selectedPixelIndex === null) return;
-    setPixels((prev) => {
-      const newPixels = [...prev];
-      newPixels[selectedPixelIndex] = {
-        color: selectedColor,
-        price: newPixels[selectedPixelIndex].price * 2,
-        bought: true,
-      };
-      return newPixels;
-    });
-    setSelectedPixelIndex(null);
-  }
+  // UI states
+  const [selectedIndex, setSelectedIndex] = useState(null); // index of clicked pixel
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [introOpen, setIntroOpen] = useState(true);
+  const [h, setH] = useState(210); // default hue
+  const [s, setS] = useState(80);
+  const [l, setL] = useState(60);
+  const [isBuying, setIsBuying] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const containerRef = useRef(null);
 
-  // Réinitialiser tous les pixels à blanc et prix 1€
-  function handleReset() {
-    setPixels(initialPixels);
-    setSelectedPixelIndex(null);
-  }
+  // derived color preview
+  const previewColor = useMemo(() => hslToCss(h, s, l), [h, s, l]);
 
-  // Fermer drawer (annuler)
-  function handleCancel() {
-    setSelectedPixelIndex(null);
-  }
+  // update progress
+  const purchasedCount = pixels.filter((p) => p.price > START_PRICE).length;
+  const progressPercent = Math.round((purchasedCount / total) * 100);
 
-  // Fermeture intro
-  function closeIntro() {
-    setShowIntro(false);
-  }
-
-  // Désactiver scroll quand drawer ou intro ouverts
-  useEffect(() => {
-    if (showIntro || selectedPixelIndex !== null) {
-      document.body.style.overflow = "hidden";
+  // handle open panel
+  function openPanel(index) {
+    setSelectedIndex(index);
+    // initialize sliders from current pixel color if HSL parse possible
+    const cur = pixels[index].color;
+    // try to parse HSL like "hsl(H S% L%)" - but we always store hsl strings from UI, so try regex
+    const m = /hsl\((\d+)\s+(\d+)%\s+(\d+)%\)/.exec(cur);
+    if (m) {
+      setH(Number(m[1]));
+      setS(Number(m[2]));
+      setL(Number(m[3]));
     } else {
-      document.body.style.overflow = "auto";
+      // fallback keep current sliders
     }
-  }, [showIntro, selectedPixelIndex]);
+    setPanelOpen(true);
+  }
+
+  function closePanel() {
+    setPanelOpen(false);
+    setSelectedIndex(null);
+  }
+
+  // validate: apply color and double price
+  function validatePixel() {
+    if (selectedIndex == null) return;
+    setIsBuying(true);
+    setTimeout(() => {
+      setPixels((prev) => {
+        const next = [...prev];
+        const cur = next[selectedIndex];
+        const newPrice = cur.price * 2;
+        next[selectedIndex] = { color: previewColor, price: newPrice };
+        return next;
+      });
+      setIsBuying(false);
+      closePanel();
+    }, 220); // small delay for animation
+  }
+
+  // reset all
+  function resetAll() {
+    if (!confirm('Réinitialiser tous les pixels et prix à 1€ ?')) return;
+    setPixels(Array.from({ length: total }).map(() => ({ color: '#ffffff', price: START_PRICE })));
+    setSelectedIndex(null);
+    setPanelOpen(false);
+  }
+
+  // keyboard escape closes panel
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') closePanel();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // zoom with ctrl+wheel (safe)
+  useEffect(() => {
+    function onWheel(e) {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setZoom((z) => {
+        const delta = -e.deltaY * 0.0025;
+        let nz = z + delta;
+        if (nz < 0.6) nz = 0.6;
+        if (nz > 2.2) nz = 2.2;
+        return Math.round(nz * 100) / 100;
+      });
+    }
+    window.addEventListener('wheel', onWheel, { passive: false });
+    return () => window.removeEventListener('wheel', onWheel);
+  }, []);
 
   return (
-    <>
-      {/* INTRO - fond sombre + texte blanc sur carte sombre */}
-      {showIntro && (
-        <div className={styles.introOverlay}>
+    <div className="app-shell" style={{ position: 'relative' }}>
+      {/* background particles */}
+      <ParticlesBackground color="#60a5fa" density={70} />
+
+      {/* Intro / tutorial overlay */}
+      {introOpen && (
+        <div className={styles.introOverlay} role="dialog" aria-modal="true">
           <div className={styles.introCard}>
-            <h1>Bienvenue sur PixelBuy Pro</h1>
+            <h2>Bienvenue — Pixel Market</h2>
             <p>
-              Ce site vous permet d’acheter et personnaliser une grille 10x10 de pixels.
-              Chaque pixel a un prix qui double à chaque achat et une couleur que vous choisissez.
-              Un contour coloré indique le prix, et vous pouvez améliorer vos pixels à volonté.
+              Achète et personnalise des pixels sur une grille 10×10. Chaque pixel commence à <strong>1€</strong>.
+              À chaque achat, le prix double (1 → 2 → 4 → 8 → 16 → 32 …) — la bordure change selon le palier.
             </p>
             <p>
-              Cliquez sur un pixel pour ouvrir le panneau d’achat, sélectionnez une couleur avec le slider HSL, puis validez.
+              Clique sur un pixel pour ouvrir le panneau, choisis sa couleur avec les sliders H / S / L, puis <strong>Valider</strong> pour appliquer la couleur et améliorer le pixel.
             </p>
-            <p>
-              Un bouton "Réinitialiser tout" vous permet de repartir à zéro à tout moment.
-            </p>
-            <div className={styles.introActions}>
-              <button onClick={closeIntro} className={styles.primaryBtn}>
-                Commencer
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }} className="introActions">
+              <button className="tourBtn" onClick={() => setIntroOpen(false)}>Entrer dans la grille</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* PAGE PRINCIPALE */}
-      <div className={styles.page}>
-        {/* Colonne gauche : grille + légende + reset */}
-        <div className={styles.left}>
-          <div className={styles.gridWrap}>
-            <div className={styles.grid} role="grid" aria-label="Pixel grid 10x10">
-              {pixels.map((pixel, idx) => (
-                <div
-                  key={idx}
-                  className={`${styles.pixel} ${getBorderClass(pixel.price)}`}
-                  onClick={() => setSelectedPixelIndex(idx)}
-                  style={{ backgroundColor: pixel.color }}
-                  title={`Pixel ${idx + 1}, Prix: ${pixel.price}€`}
-                  role="gridcell"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") setSelectedPixelIndex(idx);
-                  }}
-                >
-                  <span className={styles.price}>{pixel.price}€</span>
-                  {pixel.bought && (
-                    <span className={styles.boughtBadge} aria-label="Pixel acheté">
-                      ✓
-                    </span>
-                  )}
+      {/* main card */}
+      <main className={styles.page} ref={containerRef} style={{ transform: `scale(${zoom})` }}>
+        {/* header row */}
+        <div className={styles.header}>
+          <div>
+            <div className={styles.title}>Pixel Market — 10×10</div>
+            <div className={styles.subtitle}>Achetez, améliorez, personnalisez — frontend only pour l'instant.</div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <div style={{ textAlign: 'right', fontSize: 13, color: 'rgba(232,240,255,0.85)' }}>
+              <div>Progression: <strong>{purchasedCount}/{total}</strong></div>
+              <div style={{ marginTop: 6, width: 180 }}>
+                <div className={styles.progressBar} aria-hidden>
+                  <div className={styles.progress} style={{ width: `${progressPercent}%` }} />
                 </div>
-              ))}
-            </div>
-            {/* Légende */}
-            <div className={styles.legend} aria-label="Légende des prix">
-              <div className={styles.legendItem}>
-                <div className={`${styles.pixel} ${styles.borderPrice1}`} style={{backgroundColor:"#fff",width:"20px",height:"20px",borderRadius:"6px"}}></div>
-                <span>1€ (gris clair)</span>
-              </div>
-              <div className={styles.legendItem}>
-                <div className={`${styles.pixel} ${styles.borderPrice2}`} style={{backgroundColor:"#fff",width:"20px",height:"20px",borderRadius:"6px"}}></div>
-                <span>2€ (vert doux)</span>
-              </div>
-              <div className={styles.legendItem}>
-                <div className={`${styles.pixel} ${styles.borderPrice4}`} style={{backgroundColor:"#fff",width:"20px",height:"20px",borderRadius:"6px"}}></div>
-                <span>4€ (bleu)</span>
-              </div>
-              <div className={styles.legendItem}>
-                <div className={`${styles.pixel} ${styles.borderPrice8}`} style={{backgroundColor:"#fff",width:"20px",height:"20px",borderRadius:"6px"}}></div>
-                <span>8€ (violet)</span>
-              </div>
-              <div className={styles.legendItem}>
-                <div className={`${styles.pixel} ${styles.borderPrice16} ${styles.glow}`} style={{backgroundColor:"#fff",width:"20px",height:"20px",borderRadius:"6px"}}></div>
-                <span>16€+ (doré brillant)</span>
               </div>
             </div>
-            <div className={styles.resetRow}>
-              <button onClick={handleReset} className={styles.primaryBtn} aria-label="Réinitialiser la grille">
-                Réinitialiser tout
-              </button>
-            </div>
+
+            <button className={styles.primaryBtn} onClick={resetAll} title="Réinitialiser tout">
+              Réinitialiser tout
+            </button>
           </div>
         </div>
 
-        {/* DRAWER - panneau d’achat animé depuis la droite */}
-        <div
-          className={`${styles.drawer} ${selectedPixelIndex !== null ? styles.drawerOpen : ""}`}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="drawerTitle"
-        >
-          {selectedPixelIndex !== null && (
+        {/* left column: grid and legend */}
+        <section className={styles.left}>
+          <div className={styles.gridWrap}>
+            <div className={styles.grid} role="grid" aria-label="Grille de pixels 10 par 10">
+              {pixels.map((p, i) => {
+                const borderClass = getBorderClass(p.price);
+                const borderClassName = styles[borderClass] || '';
+                const glowClass = p.price >= 16 ? `${styles['border-price-16']} ${styles.glow}` : borderClassName;
+                return (
+                  <button
+                    key={i}
+                    className={`${styles.pixel} ${styles[borderClass] || ''} ${p.price >= 16 ? styles.glow : ''}`}
+                    onClick={() => openPanel(i)}
+                    aria-label={`Pixel ${i + 1} - Prix ${p.price} euro`}
+                    style={{ background: p.color }}
+                  >
+                    <span className="price">{p.price}€</span>
+                    {p.price > START_PRICE && <span className="boughtBadge">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className={styles.legend} aria-hidden>
+            <div className="item">
+              <div style={{ width: 12, height: 12, background: '#d1d5db', borderRadius: 4 }}></div>
+              <div style={{ fontSize: 13 }}>1€ — contour gris</div>
+            </div>
+            <div className="item">
+              <div style={{ width: 12, height: 12, background: '#86efac', borderRadius: 4 }}></div>
+              <div style={{ fontSize: 13 }}>2€ — vert doux</div>
+            </div>
+            <div className="item">
+              <div style={{ width: 12, height: 12, background: '#93c5fd', borderRadius: 4 }}></div>
+              <div style={{ fontSize: 13 }}>4€ — bleu</div>
+            </div>
+            <div className="item">
+              <div style={{ width: 12, height: 12, background: '#c4b5fd', borderRadius: 4 }}></div>
+              <div style={{ fontSize: 13 }}>8€ — violet</div>
+            </div>
+            <div className="item">
+              <div style={{ width: 12, height: 12, background: '#ffd580', borderRadius: 4, boxShadow: '0 0 8px rgba(255,213,130,0.4)' }}></div>
+              <div style={{ fontSize: 13 }}>16€+ — doré (glow)</div>
+            </div>
+          </div>
+        </section>
+
+        {/* right column panel (drawer) */}
+        <aside className={styles.panel} aria-hidden={!panelOpen}>
+          <h3>{selectedIndex != null ? `Pixel #${selectedIndex + 1}` : 'Sélectionnez un pixel'}</h3>
+
+          {selectedIndex == null ? (
+            <p style={{ color: 'rgba(232,240,255,0.85)' }}>Clique sur un pixel pour ouvrir le panneau. Ici tu pourras choisir la couleur et valider l’achat (frontend).</p>
+          ) : (
             <>
-              <div className={styles.drawerHeader}>
-                <div>
-                  <h2 id="drawerTitle" className={styles.drawerTitle}>
-                    Pixel #{selectedPixelIndex + 1}
-                  </h2>
-                  <p className={styles.drawerSub}>
-                    Prix actuel : {pixels[selectedPixelIndex].price}€
-                  </p>
-                </div>
-                <button
-                  onClick={handleCancel}
-                  aria-label="Annuler la sélection"
-                  className={styles.ghostBtn}
-                >
-                  Annuler
-                </button>
+              <div style={{ marginBottom: 8, color: 'rgba(232,240,255,0.92)' }}>
+                Prix actuel: <strong>{pixels[selectedIndex].price}€</strong>
               </div>
 
-              <div
-                className={styles.colorPreview}
-                style={{ backgroundColor: selectedColor }}
-                aria-label={`Aperçu couleur sélectionnée : ${selectedColor}`}
-              />
+              {/* color preview */}
+              <div className={styles.colorPreview} style={{ background: previewColor }} aria-hidden />
+
+              {/* sliders H S L */}
+              <div className={styles.sliderRow}>
+                <label>Hue</label>
+                <input type="range" min="0" max="360" value={h} onChange={(e) => setH(Number(e.target.value))} />
+                <div style={{ width: 40, textAlign: 'right' }}>{h}</div>
+              </div>
 
               <div className={styles.sliderRow}>
-                <label htmlFor="hueRange">Teinte</label>
-                <input
-                  type="range"
-                  id="hueRange"
-                  min="0"
-                  max="360"
-                  value={hue}
-                  onChange={(e) => setHue(Number(e.target.value))}
-                />
+                <label>Sat</label>
+                <input type="range" min="0" max="100" value={s} onChange={(e) => setS(Number(e.target.value))} />
+                <div style={{ width: 40, textAlign: 'right' }}>{s}%</div>
               </div>
+
               <div className={styles.sliderRow}>
-                <label htmlFor="saturationRange">Saturation</label>
-                <input
-                  type="range"
-                  id="saturationRange"
-                  min="0"
-                  max="100"
-                  value={saturation}
-                  onChange={(e) => setSaturation(Number(e.target.value))}
-                />
+                <label>Light</label>
+                <input type="range" min="0" max="100" value={l} onChange={(e) => setL(Number(e.target.value))} />
+                <div style={{ width: 40, textAlign: 'right' }}>{l}%</div>
               </div>
-              <div className={styles.sliderRow}>
-                <label htmlFor="lightnessRange">Luminosité</label>
-                <input
-                  type="range"
-                  id="lightnessRange"
-                  min="0"
-                  max="100"
-                  value={lightness}
-                  onChange={(e) => setLightness(Number(e.target.value))}
-                />
+
+              <div style={{ marginTop: 8, color: 'rgba(232,240,255,0.85)', fontSize: 13 }}>
+                Aperçu couleur: <code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 6px', borderRadius: 6 }}>{previewColor}</code>
               </div>
 
               <div className={styles.btnRow}>
-                <button
-                  onClick={handleValidate}
-                  className={styles.primaryBtn}
-                  aria-label="Valider la couleur et acheter"
-                >
-                  Valider
+                <button className={styles.primaryBtn} onClick={validatePixel} disabled={isBuying}>
+                  {isBuying ? '... Validation' : 'Valider (double le prix)'}
                 </button>
+                <button className={styles.ghostBtn} onClick={closePanel}>Annuler</button>
               </div>
             </>
           )}
-        </div>
-      </div>
-    </>
+
+          <div className={styles.resetRow}>
+            <small style={{ color: 'rgba(232,240,255,0.6)' }}>Réinitialiser rétablit tout à blanc et 1€</small>
+          </div>
+        </aside>
+      </main>
+    </div>
   );
 }
+
 
 
 
