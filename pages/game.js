@@ -1,85 +1,57 @@
-import Head from 'next/head';
-import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import styles from '../styles/Game.module.css';
 
-export default function Game() {
-  const initialPixels = Array.from({ length: 100 }, (_, i) => {
-    // Prix aléatoire pour l'exemple
-    const prices = [1, 2, 4, 8, 16];
-    const price = prices[Math.floor(Math.random() * prices.length)];
-    return {
-      price,
-      color: `hsl(210, 60%, ${90 - price * 4}%)`, // couleurs bleues dégradées
-    };
-  });
+export default function PixelGame() {
+  const totalPixels = 100; // 10x10 grid
+
+  // Initialiser un tableau de pixels : chaque pixel a un prix et une couleur (vide)
+  const initialPixels = Array(totalPixels).fill(null).map(() => ({
+    price: 1,
+    bought: false,
+    color: '#fff', // blanc par défaut
+  }));
 
   const [pixels, setPixels] = useState(initialPixels);
   const [selectedIndex, setSelectedIndex] = useState(null);
-  const [h, setH] = useState(210);
-  const [s, setS] = useState(60);
-  const [l, setL] = useState(70);
-  const [isBuying, setIsBuying] = useState(false);
+  const [selectedColor, setSelectedColor] = useState('#4285f4');
 
-  // Met à jour la couleur du pixel sélectionné quand H, S ou L changent
-  useEffect(() => {
-    if (selectedIndex === null) return;
-    const newColor = `hsl(${h}, ${s}%, ${l}%)`;
-    setPixels((pixels) =>
-      pixels.map((p, i) => (i === selectedIndex ? { ...p, color: newColor } : p))
-    );
-  }, [h, s, l]);
+  // Nombre de pixels achetés pour la barre de progression
+  const pixelsBoughtCount = pixels.filter(p => p.bought).length;
 
-  const handlePixelClick = (index) => {
-    setSelectedIndex(index);
-    // On récupère la couleur actuelle pour synchroniser les sliders
-    const color = pixels[index].color;
-    // Extraction HSL simplifiée (fonctionne car on génère toujours en hsl)
-    const hslMatch = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
-    if (hslMatch) {
-      setH(Number(hslMatch[1]));
-      setS(Number(hslMatch[2]));
-      setL(Number(hslMatch[3]));
-    }
-  };
+  // Fonction pour acheter un pixel
+  function buyPixel(index) {
+    setPixels(prevPixels => {
+      const pixel = prevPixels[index];
+      if (pixel.bought) return prevPixels; // déjà acheté, ne fait rien
 
-  const buyPixel = () => {
-    if (selectedIndex === null) return;
-    setIsBuying(true);
-    setTimeout(() => {
-      alert(`Pixel #${selectedIndex + 1} acheté à ${pixels[selectedIndex].price}€ !`);
-      setIsBuying(false);
-    }, 800);
-  };
+      // Acheter : doublage du prix pour le prochain achat du même pixel (si jamais racheté ?)
+      // Ici on considère qu'on peut acheter qu'une fois, mais on peut adapter.
+      const newPixel = {
+        ...pixel,
+        bought: true,
+        color: selectedColor,
+        price: pixel.price * 2, // prépare le prix doublé si on voulait re-acheter
+      };
 
-  const pixelsBoughtCount = pixels.filter((p) => p.price === 0).length;
+      const newPixels = [...prevPixels];
+      newPixels[index] = newPixel;
+      return newPixels;
+    });
+  }
 
-  // Classe bordure selon prix (existant)
-  const getBorderClass = (price) => {
-    if (price <= 1) return 'border-price-1';
-    if (price <= 2) return 'border-price-2';
-    if (price <= 4) return 'border-price-4';
-    if (price <= 8) return 'border-price-8';
-    return 'border-price-16';
-  };
+  // Barre de progression en %
+  const progressPercent = Math.floor((pixelsBoughtCount / totalPixels) * 100);
 
   return (
     <>
-      <Head>
-        <title>PixelProfit - Acheter un pixel rentable</title>
-        <meta name="description" content="Achetez des pixels rentables pour votre visibilité en ligne." />
-      </Head>
-
       <nav className={styles.navbar}>
-        <Link href="/">
-          <a className={styles.homeBtn}>Accueil</a>
-        </Link>
+        <a href="/" className={styles.homeBtn}>Accueil</a>
         <div className={styles.progress}>
-          Pixels achetés : {pixelsBoughtCount} / {pixels.length}
+          <div>Pixels achetés : {pixelsBoughtCount} / {totalPixels}</div>
           <div className={styles.progressBar}>
             <div
               className={styles.progressFill}
-              style={{ width: `${(pixelsBoughtCount / pixels.length) * 100}%` }}
+              style={{ width: `${progressPercent}%` }}
             />
           </div>
         </div>
@@ -87,8 +59,8 @@ export default function Game() {
 
       <main className={styles.main}>
         <header className={styles.header}>
-          <h1>PixelProfit</h1>
-          <p className={styles.subtitle}>Investissez dans des pixels rentables et boostez votre visibilité</p>
+          <h1>Pixel Shop</h1>
+          <p className={styles.subtitle}>Choisis ta couleur et achète ton pixel</p>
         </header>
 
         <div className={styles.page}>
@@ -96,71 +68,36 @@ export default function Game() {
             {pixels.map((pixel, i) => (
               <div
                 key={i}
-                className={`${styles.pixel} ${styles[getBorderClass(pixel.price)]} ${selectedIndex === i ? styles.selected : ''}`}
-                style={{ backgroundColor: pixel.color }}
-                onClick={() => handlePixelClick(i)}
-                title={`Pixel #${i + 1} - Prix: ${pixel.price}€`}
+                className={`${styles.pixel} ${pixel.bought ? styles.selected : ''}`}
+                onClick={() => buyPixel(i)}
+                style={{ backgroundColor: pixel.bought ? pixel.color : '#fff' }}
+                title={`Prix: ${pixel.price} €${pixel.bought ? ' - ACHETÉ' : ''}`}
               >
-                <span className={styles.price}>{pixel.price}€</span>
+                {!pixel.bought && pixel.price}
               </div>
             ))}
           </div>
 
-          {selectedIndex !== null && (
-            <aside className={styles.sidebar}>
-              <h2>Pixel #{selectedIndex + 1}</h2>
-              <p>Prix actuel : <strong>{pixels[selectedIndex].price}€</strong></p>
-
-              <div className={styles.colorPreview} style={{ backgroundColor: pixels[selectedIndex].color }}>
-                Couleur sélectionnée
-              </div>
-
-              <div className={styles.colorPicker}>
-                <label>
-                  Teinte (H): {h}
-                  <input
-                    type="range"
-                    min="0"
-                    max="360"
-                    value={h}
-                    onChange={(e) => setH(+e.target.value)}
-                  />
-                </label>
-                <label>
-                  Saturation (S): {s}%
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={s}
-                    onChange={(e) => setS(+e.target.value)}
-                  />
-                </label>
-                <label>
-                  Luminosité (L): {l}%
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={l}
-                    onChange={(e) => setL(+e.target.value)}
-                  />
-                </label>
-              </div>
-
-              <button
-                className={styles.buyBtn}
-                onClick={buyPixel}
-                disabled={isBuying}
-              >
-                Acheter ce pixel
-              </button>
-            </aside>
-          )}
+          <aside className={styles.sidebar}>
+            <h2>Choix couleur</h2>
+            <div
+              className={styles.colorPreview}
+              style={{ backgroundColor: selectedColor }}
+            >
+              {selectedColor.toUpperCase()}
+            </div>
+            <input
+              type="color"
+              value={selectedColor}
+              onChange={e => setSelectedColor(e.target.value)}
+              style={{ width: '100%', cursor: 'pointer' }}
+            />
+          </aside>
         </div>
       </main>
     </>
   );
 }
+
 
 
