@@ -1,60 +1,123 @@
-// pages/galerie.js
-import Link from 'next/link';
+// pages/game.js
+import { useEffect, useRef, useState } from 'react';
 import ParticlesBackground from '../components/ParticlesBackground';
-import styles from '../styles/grid.module.css';
-import { useEffect, useState } from 'react';
+import styles from '../styles/Game.module.css';
 
-export default function Galerie() {
-  const total = 10 * 10;
-  const [pixels, setPixels] = useState(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const raw = localStorage.getItem('pixel_grid_v1');
-        if (raw) return JSON.parse(raw);
-      }
-    } catch (e) {}
-    // default blank if none
-    return Array.from({ length: total }).map(()=> ({ color: '#ffffff', price: 1 }));
-  });
+const GRID_SIZE = 10;
+const START_PRICE = 1;
 
-  // keep in sync if localStorage changes (optionally)
-  useEffect(()=>{
-    function onStorage() {
-      try {
-        const raw = localStorage.getItem('pixel_grid_v1');
-        if(raw) setPixels(JSON.parse(raw));
-      } catch(e){}
-    }
-    window.addEventListener('storage', onStorage);
-    return ()=> window.removeEventListener('storage', onStorage);
-  },[]);
+function getBorderClass(price) {
+  if (price < 2) return 'border-price-1';
+  if (price < 4) return 'border-price-2';
+  if (price < 8) return 'border-price-4';
+  if (price < 16) return 'border-price-8';
+  return 'border-price-16';
+}
+
+export default function Game() {
+  const total = GRID_SIZE * GRID_SIZE;
+  const [pixels, setPixels] = useState(() =>
+    Array.from({ length: total }).map(() => ({ color: '#ffffff', price: START_PRICE }))
+  );
+  const [selectedIndex, setSelectedIndex] = useState(null);
+  const [h, setH] = useState(210);
+  const [s, setS] = useState(80);
+  const [l, setL] = useState(60);
+  const [isBuying, setIsBuying] = useState(false);
+
+  function handlePixelClick(index) {
+    setSelectedIndex(index);
+  }
+
+  function buyPixel() {
+    if (selectedIndex === null) return;
+    const newPixels = [...pixels];
+    newPixels[selectedIndex] = {
+      color: `hsl(${h}, ${s}%, ${l}%)`,
+      price: newPixels[selectedIndex].price * 2,
+      bought: true,
+    };
+    setPixels(newPixels);
+    setIsBuying(false);
+  }
 
   return (
-    <div className="app-shell">
-      <ParticlesBackground color="#a78bfa" density={60} />
-      <div style={{ width: '100%', maxWidth: 1100, padding: 20 }}>
-        <header style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:18 }}>
-          <div>
-            <h1 style={{ color:'#e8f0ff' }}>Galerie — Aperçu sans prix</h1>
-            <p style={{ color:'rgba(232,240,255,0.8)' }}>Appuie sur les créations: coins arrondis, prix masqués — parfait pour exposer.</p>
-          </div>
-          <div style={{ display:'flex', gap:12 }}>
-            <Link href="/" legacyBehavior><a style={{ color:'#e8f0ff', textDecoration:'underline', fontWeight:700 }}>Retour</a></Link>
-          </div>
+    <>
+      <ParticlesBackground color="#7cc4ff" density={60} />
+      <div className={styles.container}>
+        <header className={styles.header}>
+          <h1>PixelProfit - Acheter des pixels</h1>
+          <a href="/" className={styles.homeBtn}>Accueil</a>
         </header>
 
-        <div style={{ background:'rgba(255,255,255,0.02)', padding:18, borderRadius:12 }}>
-          <div className={styles.grid} style={{ gap: 8 }}>
-            {pixels.map((p, i) => (
-              <div key={i} style={{
-                width: 56, height:56, borderRadius:16,
-                background: p.color, boxShadow:'0 10px 20px rgba(2,6,22,0.25)',
-                border: '1px solid rgba(255,255,255,0.03)'
-              }} aria-hidden />
+        <div className={styles.page}>
+          <div className={styles.grid}>
+            {pixels.map((pixel, i) => (
+              <div
+                key={i}
+                className={`${styles.pixel} ${styles[getBorderClass(pixel.price)]} ${selectedIndex === i ? styles.selected : ''}`}
+                style={{ backgroundColor: pixel.color }}
+                onClick={() => handlePixelClick(i)}
+              >
+                <span className={styles.price}>{pixel.price}€</span>
+              </div>
             ))}
           </div>
+
+          {selectedIndex !== null && (
+            <aside className={styles.sidebar}>
+              <h2>Pixel #{selectedIndex + 1}</h2>
+              <p>Prix actuel : <strong>{pixels[selectedIndex].price}€</strong></p>
+
+              <div className={styles.colorPicker}>
+                <label>
+                  Teinte (H): {h}
+                  <input
+                    type="range"
+                    min="0"
+                    max="360"
+                    value={h}
+                    onChange={(e) => setH(+e.target.value)}
+                  />
+                </label>
+                <label>
+                  Saturation (S): {s}%
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={s}
+                    onChange={(e) => setS(+e.target.value)}
+                  />
+                </label>
+                <label>
+                  Luminosité (L): {l}%
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={l}
+                    onChange={(e) => setL(+e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <button
+                className={styles.buyBtn}
+                onClick={buyPixel}
+                disabled={isBuying}
+              >
+                Acheter ce pixel
+              </button>
+            </aside>
+          )}
         </div>
+
+        <footer className={styles.footer}>
+          © 2025 PixelProfit - Votre source de pixels rentables
+        </footer>
       </div>
-    </div>
+    </>
   );
 }
+
