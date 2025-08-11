@@ -1,77 +1,82 @@
-import React, { useEffect, useRef } from "react";
+// components/ParticlesBackground.js
+import { useEffect, useRef } from 'react';
 
-export default function BackgroundParticles() {
+export default function ParticlesBackground({ color = '#60a5fa', density = 60 }) {
   const canvasRef = useRef(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    let width = (c.width = window.innerWidth);
+    let height = (c.height = window.innerHeight);
+    let raf = null;
 
-    function Particle() {
-      this.x = Math.random() * width;
-      this.y = Math.random() * height;
-      this.radius = 1 + Math.random() * 2;
-      this.speedX = (Math.random() - 0.5) * 0.3;
-      this.speedY = (Math.random() - 0.5) * 0.3;
-      this.alpha = 0.5 + Math.random() * 0.5;
-    }
+    const particles = Array.from({ length: density }).map(() => ({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      r: 0.6 + Math.random() * 1.8,
+      vx: (Math.random() - 0.5) * 0.25,
+      vy: (Math.random() - 0.5) * 0.25,
+      alpha: 0.05 + Math.random() * 0.15,
+    }));
 
-    Particle.prototype.draw = function () {
-      ctx.beginPath();
-      ctx.fillStyle = `rgba(255, 255, 255, ${this.alpha})`;
-      ctx.shadowColor = "rgba(255,255,255,0.7)";
-      ctx.shadowBlur = 6;
-      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-      ctx.fill();
-    };
-
-    Particle.prototype.update = function () {
-      this.x += this.speedX;
-      this.y += this.speedY;
-
-      if (this.x < 0 || this.x > width) this.speedX *= -1;
-      if (this.y < 0 || this.y > height) this.speedY *= -1;
-    };
-
-    const particles = [];
-    for (let i = 0; i < 120; i++) {
-      particles.push(new Particle());
-    }
-
-    function animate() {
+    function draw() {
       ctx.clearRect(0, 0, width, height);
+      // subtle gradient overlay
+      const g = ctx.createLinearGradient(0, 0, width, height);
+      g.addColorStop(0, 'rgba(6, 11, 34, 0.35)');
+      g.addColorStop(1, 'rgba(9, 17, 56, 0.35)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, width, height);
+
+      // particles
+      ctx.fillStyle = color;
       particles.forEach((p) => {
-        p.update();
-        p.draw();
+        ctx.beginPath();
+        ctx.globalAlpha = p.alpha;
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
       });
-      requestAnimationFrame(animate);
+      ctx.globalAlpha = 1;
     }
-    animate();
+
+    function update() {
+      particles.forEach((p) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < -10) p.x = width + 10;
+        if (p.x > width + 10) p.x = -10;
+        if (p.y < -10) p.y = height + 10;
+        if (p.y > height + 10) p.y = -10;
+      });
+      draw();
+      raf = requestAnimationFrame(update);
+    }
+
+    update();
 
     function onResize() {
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+      width = c.width = window.innerWidth;
+      height = c.height = window.innerHeight;
     }
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
+    window.addEventListener('resize', onResize);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [color, density]);
 
   return (
     <canvas
       ref={canvasRef}
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        zIndex: 0,
-        width: "100vw",
-        height: "100vh",
-        pointerEvents: "none",
-        background: "linear-gradient(135deg, #1e40af, #3b82f6)",
-      }}
       aria-hidden="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 0,
+        pointerEvents: 'none',
+      }}
     />
   );
 }
