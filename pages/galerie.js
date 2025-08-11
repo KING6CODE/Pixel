@@ -1,6 +1,6 @@
 // pages/galerie.js
 import Link from 'next/link';
-import ParticlesBackground from '../components/ParticlesBackground';
+import ParticlesBackground from '../components/BackgroundParticles';
 import styles from '../styles/grid.module.css';
 import { useEffect, useState } from 'react';
 
