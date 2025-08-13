@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  passwordHash  String
+  balanceCents  Int      @default(0) // wallet en centimes
+  createdAt     DateTime @default(now())
+
+  purchases     Purchase[]
+}
+
+model Purchase {
+  id         String   @id @default(cuid())
+  userId     String
+  pixelIndex Int
+  color      String // "#RRGGBB"
+  intensity  Int     // 0..30
+  countAfter Int     // nombre d’achats historiques pour ce pixel (après achat)
+  priceCents Int     // payé pour cette opération
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id])
+}
+
+model Pixel {
+  // Option "sparse": on ne stocke que les pixels achetés pour ne pas remplir 1e6 lignes au départ
+  id         Int      @id // index [0..999999]
+  color      String
+  intensity  Int
+  buyCount   Int      @default(1) // nombre d’achats cumulés (1 au premier achat)
+  updatedAt  DateTime @updatedAt
+}
