@@ -1,76 +1,63 @@
 // pages/game.js
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import ParticlesBackground from "../components/ParticlesBackground";
 
 /**
- * Game page (Next.js)
+ * pages/game.js
  *
- * Features:
- * - 1000x1000 virtual grid rendered in a single canvas (sparse storage for purchased pixels)
- * - Zoom with wheel centered on mouse pointer (prevents page zoom)
- * - Pan with pointer drag
- * - Click to select pixel (hover preview + editor in fixed sidebar)
- * - UI (header, sidebar, HUD) fixed and not affected by canvas zoom/transform
- * - Hooks ready for backend integration (buyPixel, loadWindow, top-up via stripe)
+ * - Canvas-based interactive 1000x1000 pixel grid (sparse storage for purchased pixels)
+ * - No ParticlesBackground; page has a subtle gradient background
+ * - Professional user icon (SVG) instead of emoji
+ * - UI (header + sidebar) fixed above canvas and not affected by zoom/pan
+ * - All direct DOM/window usage inside useEffect => SSR-safe
  *
- * Important: backend endpoints used in this file are:
- * - GET /api/pixels/get?start=...&end=...
- * - POST /api/pixels/buy  { pixelIndex, color, intensity }
- * - POST /api/wallet/create-checkout-session { amountCents }
+ * NOTE: Backend endpoints used (optional):
+ *  - GET /api/pixels/get?start=...&end=...
+ *  - POST /api/pixels/buy { pixelIndex, color, intensity }
+ *  - POST /api/wallet/create-checkout-session { amountCents }
  *
- * This file is self-contained and client-safe (all window/canvas use is inside useEffect).
+ * This file is self-contained and ready to be used.
  */
 
 const GRID_SIZE = 1000;
 const TOTAL_PIXELS = GRID_SIZE * GRID_SIZE;
-const STORAGE_KEY = "pixelgrid_local_demo_v1"; // optional local fallback
 const INITIAL_PRICE_CENTS = 1; // 1 centime
+const STORAGE_KEY = "pixelgrid_local_demo_v2";
 
 function centsToEuroString(c) {
   return (c / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
-}
-function hexToUint32(hex) {
-  return parseInt(hex.replace("#", ""), 16) >>> 0;
-}
-function uint32ToHex(n) {
-  return "#" + (n >>> 0).toString(16).padStart(6, "0");
 }
 
 export default function Game() {
   // UI state
   const [isClient, setIsClient] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [selectedIdx, setSelectedIdx] = useState(null); // index number
+  const [selectedIdx, setSelectedIdx] = useState(null);
   const [pickerColor, setPickerColor] = useState("#ff3b30");
   const [intensity, setIntensity] = useState(30);
   const [balanceCents, setBalanceCents] = useState(0);
   const [purchasedCount, setPurchasedCount] = useState(0);
   const [loadingWindow, setLoadingWindow] = useState(false);
 
-  // Canvas + world refs (mutable, avoid rerenders)
+  // canvas + world refs
   const canvasRef = useRef(null);
   const dprRef = useRef(1);
-  const scaleRef = useRef(8); // px per pixel (initial)
-  const offsetRef = useRef({ x: 0, y: 0 }); // top-left of grid in CSS px
+  const scaleRef = useRef(8); // px per pixel initial
+  const offsetRef = useRef({ x: 0, y: 0 });
   const draggingRef = useRef(false);
-  const lastPointerRef = useRef({ x: 0, y: 0 });
+  const lastPointerRef = useRef({ x: 0, y: 0, time: 0 });
   const hoverRef = useRef({ row: -1, col: -1 });
   const rafRef = useRef(null);
 
-  // Sparse storage for purchased pixels (Map idx -> { c: '#rrggbb', exp: n })
-  // We store in a ref to avoid re-render on every change
+  // purchased pixels sparse map: Map<idx, { c: '#RRGGBB', intensity: number, exp: number }>
   const purchasedRef = useRef(new Map());
 
-  // trigger UI update
+  // rerender trigger for UI when needed
   const [, tick] = useState(0);
   const triggerRender = useCallback(() => tick((n) => n + 1), []);
 
-  // initial client-only setup
+  // load local fallback (optional)
   useEffect(() => {
     setIsClient(true);
-
-    // load from localStorage fallback (optional)
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -84,7 +71,7 @@ export default function Game() {
     }
   }, []);
 
-  // helper: persist purchases (debounced)
+  // persist purchases to local (debounced)
   const persistTimer = useRef(null);
   const persistLocal = useCallback(() => {
     if (persistTimer.current) clearTimeout(persistTimer.current);
@@ -98,26 +85,28 @@ export default function Game() {
     }, 300);
   }, []);
 
-  // helper: compute price cents for current pixel (per-pixel exponent stored as exp; initial exp 0 => price 1 cent)
+  // get price (cents) for a pixel index (exp stored as exp; default 0 => 1 cent)
   const getPriceCents = useCallback((idx) => {
-    const item = purchasedRef.current.get(idx);
-    const exp = item ? item.exp : 0;
+    const cur = purchasedRef.current.get(idx);
+    const exp = cur ? cur.exp : 0;
     return INITIAL_PRICE_CENTS * Math.pow(2, exp);
   }, []);
 
-  // load visible window from backend (start .. end are indices)
+  // load a window of purchased pixels from backend (start..end)
   const loadWindow = useCallback(async (start = 0, end = 10000) => {
     setLoadingWindow(true);
     try {
       const res = await fetch(`/api/pixels/get?start=${start}&end=${end}`);
       if (!res.ok) throw new Error("Failed to load window");
-      const json = await res.json(); // format { idx: [color, intensity, buyCount] }
-      // merge into purchasedRef
+      const json = await res.json();
       const m = purchasedRef.current;
       for (const [k, v] of Object.entries(json)) {
         const idx = Number(k);
-        // JSON shape: [color, intensity, buyCount]
-        m.set(idx, { c: v[0], intensity: v[1], exp: (v[2] || 1) - 1 }); // buyCount->exp
+        // backend format [color, intensity, buyCount]
+        const color = v[0];
+        const inten = v[1] ?? 30;
+        const buyCount = v[2] ?? 1;
+        m.set(idx, { c: color, intensity: inten, exp: Math.max(0, buyCount - 1) });
       }
       purchasedRef.current = m;
       setPurchasedCount(m.size);
@@ -125,16 +114,14 @@ export default function Game() {
       triggerRender();
     } catch (e) {
       console.warn(e);
-      // fallback: nothing
     } finally {
       setLoadingWindow(false);
     }
   }, [persistLocal, triggerRender]);
 
-  // buy pixel: requests server; server handles wallet and atomic update
+  // buy pixel via backend; server does wallet/transaction handling
   const buyPixel = useCallback(async (idx, color, intensityVal) => {
     try {
-      // call API
       const res = await fetch("/api/pixels/buy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -144,32 +131,33 @@ export default function Game() {
       if (!res.ok) {
         throw new Error(json.error || "Purchase failed");
       }
-      // update local map: server returned buyCountAfter or price
-      // We'll increment exp locally (safe)
+      // update local sparse map
       const cur = purchasedRef.current.get(idx);
       const newExp = cur ? cur.exp + 1 : 1;
       purchasedRef.current.set(idx, { c: color, intensity: intensityVal, exp: newExp });
       setPurchasedCount(purchasedRef.current.size);
       persistLocal();
       triggerRender();
-      // optionally update local balance via /api/me
-      const me = await fetch("/api/me");
-      if (me.ok) {
-        const meJson = await me.json();
-        setBalanceCents(meJson.balanceCents || 0);
-      }
+      // update balance via /api/me optionally
+      try {
+        const me = await fetch("/api/me");
+        if (me.ok) {
+          const j = await me.json();
+          setBalanceCents(j.balanceCents || 0);
+        }
+      } catch (_) {}
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e.message };
     }
   }, [persistLocal, triggerRender]);
 
-  // wallet top-up: create Stripe checkout session and redirect
+  // start Stripe checkout to add funds
   const addFunds = useCallback(async () => {
-    const amount = prompt("Montant à ajouter en € (min 1):", "10");
+    const amount = prompt("Montant à ajouter en € (min 1) :", "10");
     if (!amount) return;
-    const amountFloat = parseFloat(amount);
-    if (Number.isNaN(amountFloat) || amountFloat < 1) {
+    const f = parseFloat(amount);
+    if (isNaN(f) || f < 1) {
       alert("Montant invalide");
       return;
     }
@@ -177,11 +165,10 @@ export default function Game() {
       const res = await fetch("/api/wallet/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountCents: Math.round(amountFloat * 100) }),
+        body: JSON.stringify({ amountCents: Math.round(f * 100) }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Stripe session error");
-      // redirect to Stripe checkout
+      if (!res.ok) throw new Error(json.error || "Checkout failed");
       if (json.url) window.location.href = json.url;
     } catch (e) {
       alert("Erreur: " + e.message);
@@ -197,8 +184,7 @@ export default function Game() {
     const ctx = canvas.getContext("2d");
     dprRef.current = window.devicePixelRatio || 1;
 
-    // resize backing store helper
-    function resize() {
+    function resizeBackingStore() {
       const rect = canvas.getBoundingClientRect();
       const w = Math.max(1, rect.width);
       const h = Math.max(1, rect.height);
@@ -214,50 +200,49 @@ export default function Game() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
-    // initialize center offset (center grid)
+    // initial center grid
     function centerGrid() {
       const rect = canvas.getBoundingClientRect();
       const s = scaleRef.current;
       offsetRef.current.x = Math.round((rect.width - GRID_SIZE * s) / 2);
       offsetRef.current.y = Math.round((rect.height - GRID_SIZE * s) / 2);
     }
-    resize();
+
+    resizeBackingStore();
     centerGrid();
 
-    // draw
     function draw() {
-      resize();
+      resizeBackingStore();
       const rect = canvas.getBoundingClientRect();
       const w = rect.width;
       const h = rect.height;
       const s = scaleRef.current;
       const off = offsetRef.current;
 
-      // background gradient
+      // background
       const g = ctx.createLinearGradient(0, 0, w, h);
-      g.addColorStop(0, "#07102a");
-      g.addColorStop(1, "#08162f");
+      g.addColorStop(0, "#0b1220");
+      g.addColorStop(1, "#07102a");
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
 
-      // visible range (grid coordinates)
+      // visible range in grid coordinates
       const startCol = Math.max(0, Math.floor((-off.x) / s));
       const startRow = Math.max(0, Math.floor((-off.y) / s));
       const endCol = Math.min(GRID_SIZE - 1, Math.ceil((w - off.x) / s));
       const endRow = Math.min(GRID_SIZE - 1, Math.ceil((h - off.y) / s));
 
-      // subtle area for grid
+      // subtle grid area background
       ctx.save();
       ctx.fillStyle = "rgba(255,255,255,0.01)";
       ctx.fillRect(off.x, off.y, GRID_SIZE * s, GRID_SIZE * s);
       ctx.restore();
 
-      // draw visible cells; optimization: if s < 4 draw only purchased pixels
       const drawFull = s >= 4;
-
       const m = purchasedRef.current;
+
       if (!drawFull) {
-        // draw only purchased pixels
+        // only draw purchased pixels
         for (const [idx, val] of m.entries()) {
           const row = Math.floor(idx / GRID_SIZE);
           const col = idx % GRID_SIZE;
@@ -268,7 +253,7 @@ export default function Game() {
           ctx.fillRect(px, py, Math.ceil(s), Math.ceil(s));
         }
       } else {
-        // draw all visible cells (purchased or not)
+        // draw full visible window
         for (let r = startRow; r <= endRow; r++) {
           const base = r * GRID_SIZE;
           for (let c = startCol; c <= endCol; c++) {
@@ -277,12 +262,10 @@ export default function Game() {
             const px = off.x + c * s;
             const py = off.y + r * s;
             if (!item) {
-              // unpurchased subtle background
               ctx.fillStyle = "#ffffff";
               ctx.globalAlpha = 0.03;
               ctx.fillRect(px, py, s, s);
               ctx.globalAlpha = 1;
-              // faint border
               ctx.strokeStyle = "rgba(255,255,255,0.02)";
               ctx.lineWidth = 1;
               ctx.strokeRect(Math.round(px) + 0.5, Math.round(py) + 0.5, Math.round(s) - 1, Math.round(s) - 1);
@@ -297,7 +280,7 @@ export default function Game() {
         }
       }
 
-      // draw hover preview if inside grid
+      // hover preview
       const hv = hoverRef.current;
       if (hv && hv.row >= 0 && hv.col >= 0 && hv.row < GRID_SIZE && hv.col < GRID_SIZE) {
         const px = off.x + hv.col * s;
@@ -331,14 +314,13 @@ export default function Game() {
       }
     }
 
-    // RAF loop
     function loop() {
       draw();
       rafRef.current = requestAnimationFrame(loop);
     }
     rafRef.current = requestAnimationFrame(loop);
 
-    // pointer/wheel handlers
+    // pointer helpers
     function toGrid(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
       const x = clientX - rect.left;
@@ -361,7 +343,6 @@ export default function Game() {
       const dx = Math.abs(e.clientX - last.x);
       const dy = Math.abs(e.clientY - last.y);
       const dt = Date.now() - last.time;
-      // treat as click if small movement
       if (dx < 6 && dy < 6 && dt < 400) {
         const pos = toGrid(e.clientX, e.clientY);
         if (pos.row >= 0 && pos.row < GRID_SIZE && pos.col >= 0 && pos.col < GRID_SIZE) {
@@ -375,8 +356,6 @@ export default function Game() {
             setPickerColor("#ffffff");
             setIntensity(30);
           }
-          // open sidebar
-          setSidebarOpen(true);
         } else {
           setSelectedIdx(null);
         }
@@ -400,16 +379,16 @@ export default function Game() {
     }
 
     function onWheel(e) {
-      // only when pointer is over canvas (it is)
-      e.preventDefault(); // prevent page zoom/scroll
+      // intercept wheel when over canvas — prevent page zoom/scroll
+      e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       const oldScale = scaleRef.current;
       const delta = -e.deltaY;
-      const zoomFactor = Math.exp(delta * 0.0016); // tuned
+      const zoomFactor = Math.exp(delta * 0.0016); // tuned factor
       let newScale = Math.min(64, Math.max(1.2, oldScale * zoomFactor));
-      // keep world point under mouse stationary:
+      // keep mouse world point stable
       const worldX = (mx - offsetRef.current.x) / oldScale;
       const worldY = (my - offsetRef.current.y) / oldScale;
       offsetRef.current.x = mx - worldX * newScale;
@@ -417,15 +396,13 @@ export default function Game() {
       scaleRef.current = newScale;
     }
 
-    // attach listeners
     canvas.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("wheel", onWheel, { passive: false });
 
-    // resize
     const onResize = () => {
-      // keep offsets as-is; resizing will update canvas backing store next loop
+      // will adjust backing store next RAF loop
     };
     window.addEventListener("resize", onResize);
 
@@ -439,24 +416,22 @@ export default function Game() {
     };
   }, [isClient, pickerColor]);
 
-  // initial load once client ready
+  // initial client load
   useEffect(() => {
     if (!isClient) return;
-    // preload a window near origin for demo: [0, 10k)
-    loadWindow(0, 10000);
-    // load user balance
+    loadWindow(0, 10000); // preload a window near origin
     (async () => {
       try {
-        const res = await fetch("/api/me");
-        if (res.ok) {
-          const me = await res.json();
-          setBalanceCents(me.balanceCents || 0);
+        const me = await fetch("/api/me");
+        if (me.ok) {
+          const j = await me.json();
+          setBalanceCents(j.balanceCents || 0);
         }
-      } catch (e) { /* ignore */ }
+      } catch (_) {}
     })();
   }, [isClient, loadWindow]);
 
-  // UI handlers
+  // purchase handler
   const handlePurchase = useCallback(async () => {
     if (selectedIdx == null) {
       alert("Sélectionne un pixel d'abord.");
@@ -466,70 +441,102 @@ export default function Game() {
     if (!confirm(`Acheter le pixel #${selectedIdx} pour ${centsToEuroString(priceCents)} ?`)) return;
     const res = await buyPixel(selectedIdx, pickerColor, intensity);
     if (!res.ok) alert("Erreur d'achat : " + (res.error || "unknown"));
-    else alert("Achat traité.");
-  }, [selectedIdx, pickerColor, intensity, buyPixel, getPriceCents]);
+    else alert("Achat réussi.");
+  }, [selectedIdx, pickerColor, intensity, buyPixel]);
 
-  const handleAddFunds = useCallback(() => addFunds(), [addFunds]);
+  // small UI helpers
+  const totalValueCents = useMemo(() => {
+    let s = 0;
+    for (const [, v] of purchasedRef.current.entries()) {
+      const exp = v.exp || 0;
+      s += INITIAL_PRICE_CENTS * Math.pow(2, exp);
+    }
+    return s;
+  }, [tick]); // recompute when triggerRender is called
 
-  // small helpers for HUD
-  const hudZoomPercent = useMemo(() => Math.round(scaleRef.current * 100), [/* read on render */]);
+  // professional user SVG icon (no emoji)
+  const UserIcon = ({ size = 18 }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M20 21v-1a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
 
-  // UI layout: header fixed, sidebar fixed (right), canvas centered
   return (
-    <div style={{ minHeight: "100vh", position: "relative", fontFamily: "Inter, system-ui, Arial, sans-serif", color: "#e6eef8" }}>
-      {/* Background Particles (optional) */}
-      <ParticlesBackground color="#60a5fa" density={36} />
-
-      {/* Header (fixed) */}
+    <div style={{
+      minHeight: "100vh",
+      background: "linear-gradient(180deg,#07102a 0%, #0b1220 100%)",
+      color: "#e6eef8",
+      fontFamily: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial",
+      position: "relative",
+      overflow: "hidden"
+    }}>
+      {/* Header - fixed */}
       <header style={{
         position: "fixed", top: 0, left: 0, right: 0, height: 64, display: "flex", alignItems: "center",
-        padding: "0 18px", zIndex: 1200, background: "rgba(10,12,16,0.86)", borderBottom: "1px solid rgba(255,255,255,0.03)"
+        padding: "0 20px", zIndex: 1200, backdropFilter: "blur(6px)", borderBottom: "1px solid rgba(255,255,255,0.03)",
+        background: "linear-gradient(180deg, rgba(10,12,16,0.85), rgba(10,12,16,0.75))"
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "#19b7ff" }}>▦ PixelGrid</div>
-          <div style={{ color: "rgba(230,238,248,0.7)" }}>1,000,000 Pixels • {purchasedCount} Owned</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <Link href="/"><a style={{ textDecoration: "none", color: "#19b7ff", fontWeight: 900, fontSize: 18 }}>▦ PixelGrid</a></Link>
+          <div style={{ color: "rgba(230,238,248,0.75)", fontSize: 13 }}>1,000,000 pixels</div>
         </div>
 
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ color: "rgba(200,230,255,0.95)" }}>Balance: <strong style={{ color: "#3fe0b0" }}>{centsToEuroString(balanceCents)}</strong></div>
-          <button onClick={handleAddFunds} style={{
-            background: "linear-gradient(90deg,#ff7a45,#ff6a33)", border: "none", padding: "8px 12px",
-            borderRadius: 8, color: "#07102a", fontWeight: 800, cursor: "pointer"
-          }}>Add Funds</button>
-          <Link href="/auth/signin"><a style={{ display: "inline-block", width: 40, height: 40, borderRadius: 8, background: "rgba(255,255,255,0.03)", textAlign: "center", lineHeight: "40px" }}>👤</a></Link>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 12, alignItems: "center" }}>
+          <div style={{ color: "rgba(200,230,255,0.95)", fontSize: 14 }}>
+            Balance: <strong style={{ color: "#3fe0b0" }}>{centsToEuroString(balanceCents)}</strong>
+          </div>
+          <button onClick={addFunds} style={{
+            background: "linear-gradient(90deg,#ff7a45,#ff6a33)",
+            padding: "8px 12px", borderRadius: 8, border: "none", color: "#07102a", fontWeight: 800, cursor: "pointer"
+          }}>
+            Add Funds
+          </button>
+          <Link href="/auth/signin">
+            <a style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 40, height: 40, borderRadius: 8, background: "rgba(255,255,255,0.03)",
+              color: "#e6eef8", textDecoration: "none"
+            }} aria-label="Compte">
+              <UserIcon size={18} />
+            </a>
+          </Link>
         </div>
       </header>
 
-      {/* Canvas container (centered) */}
-      <main style={{ paddingTop: 84, paddingBottom: 24, display: "flex", gap: 18 }}>
-        <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center", minHeight: "calc(100vh - 84px)" }}>
-          <div style={{ position: "relative", width: "calc(100% - 380px)", maxWidth: 1280, height: "72vh", borderRadius: 10, overflow: "hidden", background: "#000" }}>
+      {/* main layout */}
+      <main style={{ paddingTop: 84, display: "flex", gap: 18, alignItems: "stretch", height: "calc(100vh - 84px)" }}>
+        {/* Canvas area centered */}
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "12px 24px" }}>
+          <div style={{
+            position: "relative", width: "100%", maxWidth: 1280, height: "100%",
+            borderRadius: 10, overflow: "hidden", boxShadow: "0 30px 80px rgba(2,6,22,0.6)"
+          }}>
             <canvas ref={canvasRef} style={{ width: "100%", height: "100%", display: "block", cursor: "grab" }} />
-            {/* Zoom HUD bottom-left */}
-            <div style={{
-              position: "absolute", left: 12, bottom: 12, background: "rgba(0,0,0,0.6)", padding: "10px 12px",
-              borderRadius: 10, color: "#cfe5ff", boxShadow: "0 10px 30px rgba(0,0,0,0.6)"
-            }}>
+            {/* zoom HUD bottom-left */}
+            <div style={{ position: "absolute", left: 14, bottom: 14, background: "rgba(0,0,0,0.6)", padding: 10, borderRadius: 10, color: "#cfe5ff", zIndex: 60 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <button onClick={() => { // zoom out small
-                  const old = scaleRef.current; const newS = Math.max(1.2, old * 0.9); scaleRef.current = newS; triggerRender();
-                }} style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "none", color: "#fff" }}>🔍−</button>
-                <div style={{ minWidth: 60, textAlign: "center" }}>{Math.round(scaleRef.current * 100)}%</div>
-                <button onClick={() => { const old = scaleRef.current; const newS = Math.min(64, old * 1.1); scaleRef.current = newS; triggerRender(); }} style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "none", color: "#fff" }}>🔍+</button>
+                <button onClick={() => { scaleRef.current = Math.max(1.2, scaleRef.current * 0.9); triggerRender(); }} style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "none", color: "#fff" }}>−</button>
+                <div style={{ minWidth: 64, textAlign: "center", fontWeight: 700 }}>{Math.round(scaleRef.current * 100)}%</div>
+                <button onClick={() => { scaleRef.current = Math.min(64, scaleRef.current * 1.1); triggerRender(); }} style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "none", color: "#fff" }}>＋</button>
               </div>
-              <div style={{ fontSize: 12, opacity: 0.8, marginTop: 8 }}>Click pixel to select</div>
+              <div style={{ fontSize: 12, opacity: 0.85, marginTop: 8 }}>Click to select • Drag to pan • Wheel to zoom</div>
             </div>
           </div>
         </div>
 
-        {/* Sidebar fixed width */}
-        <aside style={{ width: 360, paddingRight: 12, pointerEvents: "auto" }}>
+        {/* Sidebar - fixed width */}
+        <aside style={{ width: 360, padding: "12px 18px", pointerEvents: "auto" }}>
           <div style={{ position: "sticky", top: 84, display: "flex", flexDirection: "column", gap: 12 }}>
             {/* Price card */}
             <div style={{ background: "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01))", padding: 16, borderRadius: 12 }}>
               <div style={{ color: "#9fc8ff", fontSize: 13 }}>Current Price</div>
-              <div style={{ fontWeight: 900, fontSize: 28, marginTop: 6 }}>{centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS)}</div>
-              <div style={{ color: "rgba(200,230,255,0.8)", fontSize: 12 }}>{selectedIdx != null ? (purchasedRef.current.get(selectedIdx)?.exp ?? 0) + " previous purchases" : "0 previous purchases"}</div>
+              <div style={{ fontWeight: 900, fontSize: 28, marginTop: 6 }}>
+                {centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS)}
+              </div>
+              <div style={{ color: "rgba(200,230,255,0.85)", fontSize: 12 }}>
+                {selectedIdx != null ? ((purchasedRef.current.get(selectedIdx)?.exp ?? 0) + " previous purchases") : "0 previous purchases"}
+              </div>
             </div>
 
             {/* Color picker */}
@@ -557,18 +564,17 @@ export default function Game() {
               </div>
             </div>
 
-            {/* Purchase button */}
+            {/* Purchase */}
             <button onClick={handlePurchase} style={{ background: "linear-gradient(90deg,#ff7a45,#ff6a33)", padding: "12px 14px", borderRadius: 10, border: "none", color: "#07102a", fontWeight: 900 }}>
-               Purchase Pixel for {centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS)}
+              🛒 Purchase Pixel for {centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS)}
             </button>
 
-            {/* Info card */}
-            <div style={{ background: "rgba(255,255,255,0.02)", padding: 12, borderRadius: 12, color: "#cfe5ff" }}>
+            {/* Info + stats */}
+            <div style={{ background: "rgba(255,255,255,0.02)", padding: 12, borderRadius: 12 }}>
               <div style={{ fontSize: 13 }}>Each pixel starts at €0.01 and doubles in price every purchase.</div>
               <div style={{ marginTop: 8, color: "rgba(200,230,255,0.9)" }}>Next price: {centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) * 2 : INITIAL_PRICE_CENTS * 2)}</div>
             </div>
 
-            {/* Grid statistics */}
             <div style={{ background: "rgba(255,255,255,0.02)", padding: 12, borderRadius: 12 }}>
               <div style={{ fontWeight: 800, color: "#cfe5ff" }}>Grid Statistics</div>
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
@@ -578,9 +584,7 @@ export default function Game() {
                 </div>
                 <div style={{ flex: 1, background: "rgba(0,0,0,0.4)", padding: 8, borderRadius: 8 }}>
                   <div style={{ fontSize: 12, color: "rgba(200,230,255,0.8)" }}>Total Value</div>
-                  <div style={{ fontWeight: 800, fontSize: 22 }}>{centsToEuroString(Array.from(purchasedRef.current.values()).reduce((acc, v) => {
-                    const exp = v.exp || 0; return acc + INITIAL_PRICE_CENTS * Math.pow(2, exp);
-                  }, 0))}</div>
+                  <div style={{ fontWeight: 800, fontSize: 22 }}>{centsToEuroString(totalValueCents)}</div>
                 </div>
               </div>
               <div style={{ marginTop: 8, color: "rgba(200,230,255,0.7)", fontSize: 13 }}>
@@ -594,3 +598,4 @@ export default function Game() {
     </div>
   );
 }
+
