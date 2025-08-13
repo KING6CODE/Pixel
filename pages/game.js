@@ -478,7 +478,7 @@ export default function Game() {
   return (
     <div style={{ minHeight: "100vh", position: "relative", fontFamily: "Inter, system-ui, Arial, sans-serif", color: "#e6eef8" }}>
       {/* Background Particles (optional) */}
-      //<ParticlesBackground color="#60a5fa" density={36} />
+      <ParticlesBackground color="#60a5fa" density={36} />
 
       {/* Header (fixed) */}
       <header style={{
