@@ -1,7 +1,7 @@
 // pages/game.js
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-//import ParticlesBackground from "../components/ParticlesBackground";
+import ParticlesBackground from "../components/ParticlesBackground";
 
 /**
  * Game page (Next.js)
