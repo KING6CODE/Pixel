@@ -424,7 +424,7 @@ export default function Game() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#07102a] to-[#0b1220] text-[#e6eef8] font-sans">
+    <div className="min-h-screen bg-gradient-to-b from-[#000000] to-[#313131] text-[#FCFDFE] font-sans">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 h-16 flex items-center px-5 z-50 backdrop-blur-md border-b border-white/5 bg-gradient-to-b from-[#0a0c10]/85 to-[#0a0c10]/75">
         <div className="flex items-center gap-3">
