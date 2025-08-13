@@ -424,7 +424,7 @@ export default function Game() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#000000] to-[#313131] text-[#FCFDFE] font-sans">
+    <div className="min-h-screen bg-gradient-to-b from-[#2A2A2A] to-[#000000] text-[#FCFDFE] font-sans">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 h-16 flex items-center px-5 z-50 backdrop-blur-md border-b border-white/5 bg-gradient-to-b from-[#0a0c10]/85 to-[#0a0c10]/75">
         <div className="flex items-center gap-3">
@@ -439,9 +439,9 @@ export default function Game() {
 
           <button
             onClick={addFunds}
-            className="inline-flex items-center gap-2 bg-gradient-to-r from-[#ff7a45] to-[#ff6a33] text-[#07102a] font-extrabold rounded-xl px-3 py-2 shadow-[0_10px_30px_rgba(255,120,64,0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(255,120,64,0.32)] focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+            className="inline-flex items-center gap-2 bg-gradient-to-r from-[#ff7a45] to-[#ff6a33] text-[#FCFCFE] font-extrabold rounded-xl px-3 py-2 shadow-[0_10px_30px_rgba(255,120,64,0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(255,120,64,0.32)] focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
           >
-            💳 <span>Ajouter des fonds</span>
+            <span>Ajouter des fonds</span>
           </button>
 
           <Link href="/auth/signin">
@@ -525,7 +525,7 @@ export default function Game() {
                   type="color"
                   value={pickerColor}
                   onChange={(e) => setPickerColor(e.target.value)}
-                  className="w-full h-10 rounded-lg border border-white/10 bg-[#121922] p-0 cursor-pointer transition focus:outline-none focus:ring-2 focus:ring-cyan-400/30 hover:shadow-[0_0_0_2px_rgba(53,200,255,0.15)]"
+                  className="w-full h-10 rounded-lg border border-white/10 bg-[#000000] p-0 cursor-pointer transition focus:outline-none focus:ring-2 focus:ring-cyan-400/30 hover:shadow-[0_0_0_2px_rgba(53,200,255,0.15)]"
                 />
               </div>
 
@@ -572,9 +572,9 @@ export default function Game() {
             {/* Purchase */}
             <button
               onClick={handlePurchase}
-              className="w-full bg-gradient-to-r from-[#ff7a45] to-[#ff6a33] text-[#07102a] font-black rounded-xl px-4 py-3 shadow-[0_10px_30px_rgba(255,120,64,0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(255,120,64,0.32)] focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+              className="w-full bg-gradient-to-r from-[#ff7a45] to-[#ff6a33] text-[#FCFCFE] font-black rounded-xl px-4 py-3 shadow-[0_10px_30px_rgba(255,120,64,0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(255,120,64,0.32)] focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
             >
-              🛒 Acheter pour {centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS)}
+              Acheter pour {centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS)}
             </button>
 
             {/* Info */}
