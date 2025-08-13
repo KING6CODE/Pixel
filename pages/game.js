@@ -193,8 +193,8 @@ export default function Game() {
 
       // background dégradé sombre
       const g = ctx.createLinearGradient(0, 0, 0, h);
-      g.addColorStop(0, "#0a0f16");
-      g.addColorStop(1, "#000000");
+      g.addColorStop(0, "#080808");
+      g.addColorStop(1, "#141414");
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
 
