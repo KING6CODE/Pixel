@@ -485,7 +485,7 @@ export default function Game() {
                   {centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS)}
                 </div>
                 <div className="tiny">
-                  {(selectedIdx != null ? ((purchasedRef.current.get(selectedIdx)?.exp ?? 0) : 0))} previous purchases
+                  {selectedIdx != null ? (purchasedRef.current.get(selectedIdx)?.exp ?? 0) : 0} previous purchases'}
                 </div>
               </div>
             </section>
