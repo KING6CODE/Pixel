@@ -194,7 +194,7 @@ export default function Game() {
       // background dégradé sombre
       const g = ctx.createLinearGradient(0, 0, 0, h);
       g.addColorStop(0, "#0a0f16");
-      g.addColorStop(1, "#0b1220");
+      g.addColorStop(1, "#141414");
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
 
@@ -424,7 +424,7 @@ export default function Game() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#2A2A2A] to-[#000000] text-[#FCFDFE] font-sans">
+    <div className="min-h-screen bg-gradient-to-b from-[#000000] to-[#0A0A0A] text-[#FCFDFE] font-sans">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 h-16 flex items-center px-5 z-50 backdrop-blur-md border-b border-white/5 bg-gradient-to-b from-[#0a0c10]/85 to-[#0a0c10]/75">
         <div className="flex items-center gap-3">
