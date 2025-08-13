@@ -1,7 +1,7 @@
 // pages/game.js
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import ParticlesBackground from "../components/ParticlesBackground";
+//import ParticlesBackground from "../components/ParticlesBackground";
 
 /**
  * Game page (Next.js)
@@ -478,7 +478,7 @@ export default function Game() {
   return (
     <div style={{ minHeight: "100vh", position: "relative", fontFamily: "Inter, system-ui, Arial, sans-serif", color: "#e6eef8" }}>
       {/* Background Particles (optional) */}
-      <ParticlesBackground color="#60a5fa" density={36} />
+      //<ParticlesBackground color="#60a5fa" density={36} />
 
       {/* Header (fixed) */}
       <header style={{
@@ -559,7 +559,7 @@ export default function Game() {
 
             {/* Purchase button */}
             <button onClick={handlePurchase} style={{ background: "linear-gradient(90deg,#ff7a45,#ff6a33)", padding: "12px 14px", borderRadius: 10, border: "none", color: "#07102a", fontWeight: 900 }}>
-              🛒 Purchase Pixel for {centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS)}
+               Purchase Pixel for {centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS)}
             </button>
 
             {/* Info card */}
