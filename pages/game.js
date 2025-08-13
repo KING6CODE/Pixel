@@ -5,7 +5,7 @@ import Link from "next/link";
 const GRID_SIZE = 1000;
 const TOTAL_PIXELS = GRID_SIZE * GRID_SIZE;
 const INITIAL_PRICE_CENTS = 1; // 1 centime
-const STORAGE_KEY = "pixelgrid_local_demo_v3";
+const STORAGE_KEY = "pixelgrid_local_demo_tailwind_v1";
 
 function centsToEuroString(c) {
   return (c / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
@@ -15,7 +15,7 @@ export default function Game() {
   // UI state
   const [isClient, setIsClient] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState(null);
-  const [pickerColor, setPickerColor] = useState("#e7602b"); // orange comme la capture
+  const [pickerColor, setPickerColor] = useState("#e7602b");
   const [intensity, setIntensity] = useState(24);
   const [balanceCents, setBalanceCents] = useState(0);
   const [purchasedCount, setPurchasedCount] = useState(0);
@@ -35,6 +35,12 @@ export default function Game() {
 
   const [, tick] = useState(0);
   const triggerRender = useCallback(() => tick((n) => n + 1), []);
+
+  // helper for display (évite "??" si ton Babel est strict)
+  const getPrevPurchases = useCallback((idx) => {
+    const v = purchasedRef.current.get(idx);
+    return v && typeof v.exp === "number" ? v.exp : 0;
+  }, []);
 
   // load local
   useEffect(() => {
@@ -119,7 +125,7 @@ export default function Game() {
     }
   }, [persistLocal, triggerRender]);
 
-  // add funds (simple — modale complète possible plus tard)
+  // add funds (UI simple)
   const addFunds = useCallback(async () => {
     const amount = prompt("Montant à ajouter en € (min 1) :", "25");
     if (!amount) return;
@@ -185,7 +191,7 @@ export default function Game() {
       const s = scaleRef.current;
       const off = offsetRef.current;
 
-      // background (plus sombre, bleu nuit)
+      // background dégradé sombre
       const g = ctx.createLinearGradient(0, 0, 0, h);
       g.addColorStop(0, "#0a0f16");
       g.addColorStop(1, "#0b1220");
@@ -198,7 +204,7 @@ export default function Game() {
       const endCol = Math.min(GRID_SIZE - 1, Math.ceil((w - off.x) / s));
       const endRow = Math.min(GRID_SIZE - 1, Math.ceil((h - off.y) / s));
 
-      // subtle stage
+      // zone légère
       ctx.save();
       ctx.fillStyle = "rgba(255,255,255,0.015)";
       ctx.fillRect(off.x, off.y, GRID_SIZE * s, GRID_SIZE * s);
@@ -283,7 +289,6 @@ export default function Game() {
     }
     rafRef.current = requestAnimationFrame(loop);
 
-    // pointer helpers
     function toGrid(clientX, clientY) {
       const rect = canvas.getBoundingClientRect();
       const x = clientX - rect.left;
@@ -419,23 +424,31 @@ export default function Game() {
   );
 
   return (
-    <div className="page">
+    <div className="min-h-screen bg-gradient-to-b from-[#07102a] to-[#0b1220] text-[#e6eef8] font-sans">
       {/* Header */}
-      <header className="hdr">
-        <div className="brand">
-          <Link href="/"><a className="logo">▦ PixelGrid</a></Link>
-          <div className="muted">1,000,000 pixels</div>
+      <header className="fixed top-0 left-0 right-0 h-16 flex items-center px-5 z-50 backdrop-blur-md border-b border-white/5 bg-gradient-to-b from-[#0a0c10]/85 to-[#0a0c10]/75">
+        <div className="flex items-center gap-3">
+          <Link href="/"><a className="text-[#19b7ff] no-underline font-extrabold text-lg hover:brightness-110 transition">▦ PixelGrid</a></Link>
+          <div className="text-xs text-blue-100/75">1,000,000 pixels</div>
         </div>
 
-        <div className="hdr-right">
-          <div className="balance">
-            Solde&nbsp;: <strong className="money">{centsToEuroString(balanceCents)}</strong>
+        <div className="ml-auto flex items-center gap-3">
+          <div className="text-sm text-blue-100/90">
+            Solde : <strong className="text-[#3fe0b0]">{centsToEuroString(balanceCents)}</strong>
           </div>
-          <button className="btn btn-primary" onClick={addFunds}>
-            <span className="btn-ico">💳</span> Ajouter des fonds
+
+          <button
+            onClick={addFunds}
+            className="inline-flex items-center gap-2 bg-gradient-to-r from-[#ff7a45] to-[#ff6a33] text-[#07102a] font-extrabold rounded-xl px-3 py-2 shadow-[0_10px_30px_rgba(255,120,64,0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(255,120,64,0.32)] focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+          >
+            💳 <span>Ajouter des fonds</span>
           </button>
+
           <Link href="/auth/signin">
-            <a className="icon-btn" aria-label="Compte">
+            <a
+              aria-label="Compte"
+              className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-white/5 text-white border border-white/10 transition-all hover:-translate-y-0.5 hover:shadow-[0_20px_60px_rgba(2,6,22,0.55)] hover:bg-white/10"
+            >
               <UserIcon size={18} />
             </a>
           </Link>
@@ -443,116 +456,156 @@ export default function Game() {
       </header>
 
       {/* main layout */}
-      <main className="main">
+      <main className="pt-20 h-[calc(100vh-5rem)] flex gap-4 items-stretch">
         {/* Canvas */}
-        <div className="stage-wrap">
-          <div className="stage">
-            <canvas ref={canvasRef} className="canvas" />
-            <div className="hud">
-              <div className="zoom">
-                <button className="icon-pad" onClick={() => { scaleRef.current = Math.max(1.2, scaleRef.current * 0.9); triggerRender(); }}>−</button>
-                <div className="zoom-val">{Math.round(scaleRef.current * 100)}%</div>
-                <button className="icon-pad" onClick={() => { scaleRef.current = Math.min(64, scaleRef.current * 1.1); triggerRender(); }}>＋</button>
+        <div className="flex-1 flex items-center justify-center px-6">
+          <div className="relative w-full max-w-[1280px] h-full rounded-xl overflow-hidden shadow-[0_30px_80px_rgba(2,6,22,0.6)] border border-white/5">
+            <canvas ref={canvasRef} className="w-full h-full block cursor-grab" />
+            {/* HUD */}
+            <div className="absolute left-3.5 bottom-3.5 bg-black/60 text-blue-100/90 px-2.5 py-2 rounded-xl border border-white/10 backdrop-blur-sm">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { scaleRef.current = Math.max(1.2, scaleRef.current * 0.9); triggerRender(); }}
+                  className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 text-white transition hover:-translate-y-0.5 hover:shadow-[0_20px_60px_rgba(2,6,22,0.55)] hover:bg-white/10"
+                >−</button>
+                <div className="min-w-16 text-center font-extrabold">{Math.round(scaleRef.current * 100)}%</div>
+                <button
+                  onClick={() => { scaleRef.current = Math.min(64, scaleRef.current * 1.1); triggerRender(); }}
+                  className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 text-white transition hover:-translate-y-0.5 hover:shadow-[0_20px_60px_rgba(2,6,22,0.55)] hover:bg-white/10"
+                >＋</button>
               </div>
-              <div className="hint">Click to select • Drag to pan • Wheel to zoom</div>
+              <div className="text-[11px] opacity-85 mt-2">Click to select • Drag to pan • Wheel to zoom</div>
             </div>
           </div>
         </div>
 
         {/* Sidebar */}
-        <aside className="sidebar">
-          <div className="sticky">
+        <aside className="w-[360px] px-4">
+          <div className="sticky top-20 flex flex-col gap-3">
             {/* Selected Pixel */}
-            <section className="card">
-              <div className="card-title">
-                <span className="dot teal" /> Selected Pixel
+            <section className="bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] border border-white/10 rounded-xl p-4 shadow-[0_6px_24px_rgba(1,4,12,0.3)] hover:shadow-[0_10px_34px_rgba(1,4,12,0.4)] transition">
+              <div className="font-extrabold text-blue-100/90 flex items-center gap-2 mb-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-teal-300" />
+                Selected Pixel
                 {selectedIdx != null && (
-                  <span className="pos">({Math.floor(selectedIdx / GRID_SIZE)}, {selectedIdx % GRID_SIZE})</span>
+                  <span className="ml-auto text-xs text-blue-300/70">
+                    ({Math.floor(selectedIdx / GRID_SIZE)}, {selectedIdx % GRID_SIZE})
+                  </span>
                 )}
               </div>
 
-              <div className="pixel-row">
-                <div className="pixel-box" style={{ background: pickerColor }} />
-                <div className="pixel-info">
-                  <div className="muted">Current Owner</div>
-                  <div className="muted">Available</div>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-16 h-16 rounded-lg border border-black/40 shadow-[inset_0_0_0_2px_rgba(255,255,255,0.06)]" style={{ background: pickerColor }} />
+                <div className="text-sm text-blue-200/70 leading-tight">
+                  <div>Current Owner</div>
+                  <div>Available</div>
                 </div>
               </div>
 
-              <div className="price-block">
-                <div className="muted">Current Price</div>
-                <div className="price">
+              <div className="bg-[#0e141b] border border-white/10 rounded-lg p-3">
+                <div className="text-sm text-blue-200/80">Current Price</div>
+                <div className="font-black text-[28px] text-cyan-300 mt-1">
                   {centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS)}
                 </div>
-                <div className="tiny">
-                  {selectedIdx != null ? (purchasedRef.current.get(selectedIdx)?.exp ?? 0) : 0} previous purchases'}
+                <div className="text-xs text-blue-300/70">
+                  {selectedIdx != null ? getPrevPurchases(selectedIdx) : 0} previous purchases
                 </div>
               </div>
             </section>
 
             {/* Color */}
-            <section className="card">
-              <div className="card-title"><span className="dot cyan" /> Pixel Color</div>
-
-              <div className="color-input">
-                <input type="color" value={pickerColor} onChange={(e) => setPickerColor(e.target.value)} />
+            <section className="bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] border border-white/10 rounded-xl p-4 shadow-[0_6px_24px_rgba(1,4,12,0.3)] hover:shadow-[0_10px_34px_rgba(1,4,12,0.4)] transition">
+              <div className="font-extrabold text-blue-100/90 flex items-center gap-2 mb-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-cyan-300" />
+                Pixel Color
               </div>
 
-              <div className="swatches">
-                {["#e7602b","#ff3b30","#34c759","#0a84ff","#ffcc00","#a64dff","#00d1ff","#ffffff","#111318"].map(c => (
-                  <button key={c} onClick={() => setPickerColor(c)} className="sw" style={{ background: c }} aria-label={c} />
+              <div className="w-full">
+                <input
+                  type="color"
+                  value={pickerColor}
+                  onChange={(e) => setPickerColor(e.target.value)}
+                  className="w-full h-10 rounded-lg border border-white/10 bg-[#121922] p-0 cursor-pointer transition focus:outline-none focus:ring-2 focus:ring-cyan-400/30 hover:shadow-[0_0_0_2px_rgba(53,200,255,0.15)]"
+                />
+              </div>
+
+              <div className="flex gap-2 mt-3 flex-wrap">
+                {["#e7602b","#ff3b30","#34c759","#0a84ff","#ffcc00","#a64dff","#00d1ff","#ffffff","#111318"].map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setPickerColor(c)}
+                    aria-label={c}
+                    className="w-7 h-7 rounded-[7px] border border-white/10 transition transform hover:-translate-y-0.5 hover:shadow-[0_0_0_6px_rgba(255,255,255,0.06)]"
+                    style={{ background: c }}
+                  />
                 ))}
               </div>
             </section>
 
             {/* Intensity */}
-            <section className="card">
-              <div className="card-title"><span className="dot cyan" /> Intensity Level</div>
-              <div className="range-wrap">
+            <section className="bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] border border-white/10 rounded-xl p-4 shadow-[0_6px_24px_rgba(1,4,12,0.3)] hover:shadow-[0_10px_34px_rgba(1,4,12,0.4)] transition">
+              <div className="font-extrabold text-blue-100/90 flex items-center gap-2 mb-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-cyan-300" />
+                Intensity Level
+              </div>
+
+              <div className="py-1">
                 <input
                   type="range"
                   min={0}
                   max={30}
                   value={intensity}
                   onChange={(e) => setIntensity(Number(e.target.value))}
+                  className="w-full h-1.5 rounded-full bg-slate-900 accent-cyan-400 cursor-pointer"
                 />
               </div>
-              <div className="range-legend">
+
+              <div className="flex justify-between text-xs text-blue-200/80 mt-1">
                 <span>0 (Dim)</span>
-                <span className="badge">{intensity}/30</span>
+                <span className="px-2 py-0.5 rounded-full bg-[#0e141b] border border-white/10 font-bold text-blue-50/90">
+                  {intensity}/30
+                </span>
                 <span>30 (Bright)</span>
               </div>
             </section>
 
             {/* Purchase */}
-            <button className="btn btn-primary big" onClick={handlePurchase}>
+            <button
+              onClick={handlePurchase}
+              className="w-full bg-gradient-to-r from-[#ff7a45] to-[#ff6a33] text-[#07102a] font-black rounded-xl px-4 py-3 shadow-[0_10px_30px_rgba(255,120,64,0.22)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(255,120,64,0.32)] focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+            >
               🛒 Acheter pour {centsToEuroString(selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS)}
             </button>
 
             {/* Info */}
-            <section className="card">
-              <div className="note">
+            <section className="bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] border border-white/10 rounded-xl p-4 shadow-[0_6px_24px_rgba(1,4,12,0.3)]">
+              <div className="text-sm text-blue-50/90">
                 Each pixel starts at €0.01 and doubles in price with every purchase.
               </div>
-              <div className="next">Next price: {
-                centsToEuroString((selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS) * 2)
-              }</div>
+              <div className="mt-2 text-sm text-blue-100/90">
+                Next price: {centsToEuroString((selectedIdx != null ? getPriceCents(selectedIdx) : INITIAL_PRICE_CENTS) * 2)}
+              </div>
             </section>
 
             {/* Stats */}
-            <section className="card">
-              <div className="card-title"><span className="dot teal" /> Grid Statistics</div>
-              <div className="stats">
-                <div className="stat">
-                  <div className="stat-label">Pixels Owned</div>
-                  <div className="stat-val">{purchasedCount}</div>
+            <section className="bg-[linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] border border-white/10 rounded-xl p-4 shadow-[0_6px_24px_rgba(1,4,12,0.3)]">
+              <div className="font-extrabold text-blue-100/90 flex items-center gap-2 mb-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-teal-300" />
+                Grid Statistics
+              </div>
+
+              <div className="flex gap-2 mt-1">
+                <div className="flex-1 bg-slate-900 border border-white/10 rounded-lg p-2.5">
+                  <div className="text-xs text-blue-200/80">Pixels Owned</div>
+                  <div className="font-extrabold text-2xl">{purchasedCount}</div>
                 </div>
-                <div className="stat">
-                  <div className="stat-label">Total Value</div>
-                  <div className="stat-val">{centsToEuroString(totalValueCents)}</div>
+                <div className="flex-1 bg-slate-900 border border-white/10 rounded-lg p-2.5">
+                  <div className="text-xs text-blue-200/80">Total Value</div>
+                  <div className="font-extrabold text-2xl">{centsToEuroString(totalValueCents)}</div>
                 </div>
               </div>
-              <div className="tiny2">
+
+              <div className="mt-2 text-[13px] text-blue-200/80">
                 Available Pixels: {TOTAL_PIXELS - purchasedCount}<br />
                 Completion: {((purchasedCount / TOTAL_PIXELS) * 100).toFixed(6)}%
               </div>
@@ -560,174 +613,9 @@ export default function Game() {
           </div>
         </aside>
       </main>
-
-      {/* Styles — palette et animations fidèles aux captures */}
-      <style jsx>{`
-        :root{
-          --bg:#0b1220;
-          --bg-2:#0a0f16;
-          --card:#1d242c;
-          --card-2:#1a2027;
-          --muted:#b7c4d3;
-          --muted-2:#8fa3b9;
-          --line:rgba(255,255,255,0.06);
-          --white:#e6eef8;
-          --cyan:#35c8ff;
-          --teal:#36e0b3;
-          --money:#3fe0b0;
-          --orange-1:#ff7a45;
-          --orange-2:#ff6a33;
-          --orange-3:#ff824f;
-          --shadow:0 20px 60px rgba(2,6,22,0.55);
-          --radius:12px;
-          --radius-lg:14px;
-          --radius-sm:8px;
-          --ring:0 0 0 2px rgba(53,200,255,0.15);
-        }
-        *{box-sizing:border-box}
-        .page{
-          min-height:100vh;
-          background: linear-gradient(180deg,var(--bg-2) 0%, var(--bg) 100%);
-          color:var(--white);
-          font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial;
-        }
-        .hdr{
-          position:fixed; inset:0 0 auto 0; height:64px;
-          display:flex; align-items:center; padding:0 16px 0 20px; z-index:50;
-          backdrop-filter: blur(8px);
-          background: linear-gradient(180deg, rgba(10,12,16,0.86), rgba(10,12,16,0.76));
-          border-bottom:1px solid rgba(255,255,255,0.04);
-        }
-        .brand{display:flex; align-items:center; gap:14px}
-        .logo{color:#19b7ff; text-decoration:none; font-weight:900; font-size:18px}
-        .logo:hover{filter:brightness(1.1)}
-        .muted{color:var(--muted); font-size:13px}
-        .hdr-right{margin-left:auto; display:flex; gap:12px; align-items:center}
-        .balance{font-size:14px; color:#cce9ff}
-        .money{color:var(--money)}
-        .icon-btn{
-          width:40px;height:40px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;
-          color:var(--white); text-decoration:none; background:rgba(255,255,255,0.04);
-          border:1px solid var(--line); transition: all .22s ease;
-        }
-        .icon-btn:hover{transform:translateY(-1px); box-shadow:var(--shadow); background:rgba(255,255,255,0.06)}
-        .btn{
-          border:none; cursor:pointer; border-radius:10px; font-weight:800; padding:10px 14px;
-          transition: transform .2s ease, box-shadow .2s ease, filter .2s ease, background-position .25s ease;
-          background-size:200% 100%;
-        }
-        .btn-primary{
-          background-image: linear-gradient(90deg, var(--orange-1), var(--orange-2));
-          color:#081119; box-shadow: 0 10px 30px rgba(255,120,64,0.22);
-        }
-        .btn-primary:hover{
-          transform: translateY(-1px);
-          filter: saturate(1.05);
-          box-shadow: 0 14px 40px rgba(255,120,64,0.32);
-          background-position: 100% 0;
-        }
-        .btn-primary:active{transform: translateY(0); filter:saturate(0.98)}
-        .btn.big{width:100%; padding:14px 16px; border-radius:12px; font-size:15px}
-        .btn-ico{margin-right:8px}
-
-        .main{
-          padding-top:84px; display:flex; gap:18px; align-items:stretch;
-          height:calc(100vh - 84px);
-        }
-        .stage-wrap{flex:1; display:flex; align-items:center; justify-content:center; padding:12px 24px}
-        .stage{
-          position:relative; width:100%; max-width:1280px; height:100%;
-          border-radius:10px; overflow:hidden; box-shadow:var(--shadow); background:transparent;
-          border:1px solid rgba(255,255,255,0.04);
-        }
-        .canvas{width:100%; height:100%; display:block; cursor:grab}
-        .hud{
-          position:absolute; left:14px; bottom:14px; background:rgba(0,0,0,0.6);
-          padding:10px; border-radius:10px; color:#cfe5ff; border:1px solid rgba(255,255,255,0.06);
-          backdrop-filter: blur(2px);
-        }
-        .zoom{display:flex; gap:8px; align-items:center}
-        .icon-pad{
-          width:36px;height:36px;border-radius:8px;border:1px solid var(--line);
-          background:rgba(255,255,255,0.04); color:#fff; cursor:pointer;
-          transition: transform .15s ease, box-shadow .2s ease, background .2s ease;
-        }
-        .icon-pad:hover{transform:translateY(-1px); box-shadow:var(--shadow); background:rgba(255,255,255,0.06)}
-        .zoom-val{min-width:64px;text-align:center; font-weight:800}
-        .hint{font-size:12px; opacity:.85; margin-top:8px}
-
-        .sidebar{width:360px; padding:12px 18px}
-        .sticky{position:sticky; top:84px; display:flex; flex-direction:column; gap:12px}
-
-        .card{
-          background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-          border:1px solid var(--line);
-          border-radius:var(--radius); padding:16px; box-shadow: 0 6px 24px rgba(1,4,12,0.3);
-        }
-        .card:hover{box-shadow: 0 10px 34px rgba(1,4,12,0.4)}
-        .card-title{
-          font-weight:800; color:#cfe5ff; display:flex; align-items:center; gap:10px; margin-bottom:10px
-        }
-        .dot{width:10px;height:10px;border-radius:50%}
-        .dot.cyan{background:#35c8ff}
-        .dot.teal{background:#36e0b3}
-        .pos{margin-left:auto; color:#7fa6d1; font-size:12px}
-
-        .pixel-row{display:flex; gap:14px; align-items:center; margin-bottom:12px}
-        .pixel-box{
-          width:64px; height:64px; border-radius:10px; border:1px solid rgba(0,0,0,0.35);
-          box-shadow: inset 0 0 0 2px rgba(255,255,255,0.06);
-        }
-        .pixel-info .muted{line-height:1.2}
-
-        .price-block{
-          background: #0e141b; border:1px solid var(--line); padding:12px; border-radius:10px;
-        }
-        .price{font-weight:900; font-size:28px; margin:6px 0; color:#23d0ff}
-        .tiny{color:#8fb0cf; font-size:12px}
-        .tiny2{color:#9bb6d4; font-size:13px; margin-top:8px}
-
-        .color-input input[type="color"]{
-          width:100%; height:40px; border-radius:10px; border:1px solid rgba(255,255,255,0.08);
-          background:#121922; padding:0; appearance:none;
-          transition: box-shadow .2s ease, transform .2s ease;
-        }
-        .color-input input[type="color"]:hover{box-shadow:var(--ring); transform:translateY(-1px)}
-
-        .swatches{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap}
-        .sw{
-          width:28px; height:28px; border-radius:7px; border:1px solid rgba(255,255,255,0.08);
-          transition: transform .15s ease, box-shadow .2s ease;
-        }
-        .sw:hover{transform:translateY(-1px) scale(1.03); box-shadow:0 0 0 3px rgba(255,255,255,0.08)}
-
-        .range-wrap{padding:4px 2px}
-        .range-wrap input[type="range"]{
-          -webkit-appearance:none; width:100%; height:4px; background:#0f1620; border-radius:999px;
-          outline:none; border:1px solid var(--line);
-        }
-        .range-wrap input[type="range"]::-webkit-slider-thumb{
-          -webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:#fff; border:2px solid #10161f;
-          box-shadow: 0 0 0 6px rgba(255,255,255,0.06), 0 6px 14px rgba(0,0,0,0.45);
-          cursor:pointer; transition: transform .15s ease, box-shadow .2s ease;
-        }
-        .range-wrap input[type="range"]::-webkit-slider-thumb:hover{transform:scale(1.05)}
-        .range-legend{display:flex; justify-content:space-between; color:#b9d1ea; font-size:12px; margin-top:6px}
-        .badge{
-          background:#0e141b; border:1px solid var(--line); border-radius:999px; padding:2px 8px; color:#d9f1ff;
-          font-weight:700
-        }
-
-        .note{font-size:13px; color:#d3e7ff}
-        .next{margin-top:8px; color:#bfe6ff}
-
-        .stats{display:flex; gap:8px; margin-top:8px}
-        .stat{flex:1; background:#0f1620; border:1px solid var(--line); padding:10px; border-radius:10px}
-        .stat-label{font-size:12px; color:#b9d1ea}
-        .stat-val{font-weight:800; font-size:22px}
-      `}</style>
     </div>
   );
 }
+
 
 
